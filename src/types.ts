@@ -43,10 +43,21 @@ export interface WatchSnapshot {
   noteworthy: DepartureEvent[];
 }
 
+/** Delay-tracking sample for one trip (minutes from midnight, Prague). */
+export interface TripObservation {
+  /** First estimated departure seen for this trip. */
+  first: number;
+  /** Most recent estimated departure (for continuity matching). */
+  last: number;
+}
+
 export interface StoredWatch extends WatchConfig {
   id: string;
   createdAt: string;
   lastFingerprint?: string;
-  /** First seen estimates keyed by trip identity, minutes from midnight. */
-  observations?: Record<string, number>;
+  /**
+   * Live estimate tracking keyed by trip identity.
+   * Legacy values may be a bare number (= first=last).
+   */
+  observations?: Record<string, number | TripObservation>;
 }

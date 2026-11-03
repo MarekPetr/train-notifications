@@ -1,6 +1,18 @@
 import { resolveStop, type StopRef } from "./stops";
 import { isWithinWindow } from "./watch";
-import type { AlertEvent, DepartureEvent, WatchConfig } from "./types";
+import type {
+  AlertEvent,
+  DepartureEvent,
+  TripObservation,
+  WatchConfig,
+} from "./types";
+
+type ObservationMap = Record<string, number | TripObservation>;
+
+/** Max jump of estimate between checks to treat as the same trip (not the next service). */
+const MAX_ESTIMATE_JUMP_MIN = 10;
+/** Cap inferred delay from estimate slip (minutes). */
+const MAX_INFERRED_DELAY_MIN = 180;
 
 interface BoardDeparture {
   line: string;
@@ -29,7 +41,7 @@ export function createEvalCache(stops?: StopRef[]): EvalCache {
 export async function evaluateWatch(
   watch: WatchConfig,
   now = new Date(),
-  observations: Record<string, number> = {},
+  observations: ObservationMap = {},
   cache?: EvalCache,
   stops: StopRef[] = cache?.stops ?? [],
 ): Promise<{
@@ -37,10 +49,10 @@ export async function evaluateWatch(
   alerts: AlertEvent[];
   stopName: string | null;
   source: string;
-  observations: Record<string, number>;
+  observations: Record<string, TripObservation>;
 }> {
   const board = await getBoard(watch.from, stops, cache);
-  const nextObservations: Record<string, number> = {};
+  const nextObservations: Record<string, TripObservation> = {};
   const departures = board.departures
     .filter((dep) => destinationMatches(dep.destination, watch.to))
     .map((dep) =>
@@ -266,8 +278,8 @@ function toDepartureEvent(
   dep: BoardDeparture,
   now: Date,
   watch: WatchConfig,
-  previous: Record<string, number>,
-  nextObservations: Record<string, number>,
+  previous: ObservationMap,
+  nextObservations: Record<string, TripObservation>,
 ): DepartureEvent {
   const parsed = parseTimeMark(dep.timeMark, now);
   let delayMinutes = parsed.delayMinutes;
@@ -283,7 +295,9 @@ function toDepartureEvent(
       nextObservations,
     );
     const slipped = estimatedMins - firstSeen;
-    if (slipped >= 0) delayMinutes = slipped;
+    if (slipped >= 0 && slipped <= MAX_INFERRED_DELAY_MIN) {
+      delayMinutes = slipped;
+    }
   }
 
   let status: DepartureEvent["status"] = "unknown";
@@ -316,35 +330,46 @@ function toDepartureEvent(
   };
 }
 
+function readObservation(value: number | TripObservation): TripObservation {
+  if (typeof value === "number") return { first: value, last: value };
+  return value;
+}
+
 function matchObservation(
   line: string,
   destination: string,
   estimatedMins: number,
-  previous: Record<string, number>,
-  nextObservations: Record<string, number>,
+  previous: ObservationMap,
+  nextObservations: Record<string, TripObservation>,
 ): number {
   const prefix = `${normalize(line)}|${normalize(destination)}|`;
   let bestKey: string | null = null;
   let bestDist = Infinity;
+  let best: TripObservation | null = null;
 
-  for (const [key, first] of Object.entries(previous)) {
+  for (const [key, raw] of Object.entries(previous)) {
     if (!key.startsWith(prefix)) continue;
     if (key in nextObservations) continue;
-    const slipped = estimatedMins - first;
-    // Same trip if estimate moved a bit earlier/later, but not a different service.
-    if (slipped >= -3 && slipped < 90 && Math.abs(slipped) < bestDist) {
+    const obs = readObservation(raw);
+    // Continuity vs last estimate — not vs first seen.
+    // Otherwise the next hourly R9 looks like the previous one +60 min late.
+    const jump = estimatedMins - obs.last;
+    if (jump < -3 || jump > MAX_ESTIMATE_JUMP_MIN) continue;
+    const dist = Math.abs(jump);
+    if (dist < bestDist) {
       bestKey = key;
-      bestDist = Math.abs(slipped);
+      bestDist = dist;
+      best = obs;
     }
   }
 
-  if (bestKey) {
-    nextObservations[bestKey] = previous[bestKey];
-    return previous[bestKey];
+  if (bestKey && best) {
+    nextObservations[bestKey] = { first: best.first, last: estimatedMins };
+    return best.first;
   }
 
   const newKey = `${prefix}${estimatedMins}`;
-  nextObservations[newKey] = estimatedMins;
+  nextObservations[newKey] = { first: estimatedMins, last: estimatedMins };
   return estimatedMins;
 }
 

@@ -7,7 +7,12 @@ import {
 } from "./idsjmk";
 import { sendWebhook } from "./notify";
 import { loadStopsCatalog, refreshStopsCatalog } from "./stops";
-import type { Env, StoredWatch, WatchSnapshot } from "./types";
+import type {
+  Env,
+  StoredWatch,
+  TripObservation,
+  WatchSnapshot,
+} from "./types";
 import { isWatchDue, parseWatchFromRequest, watchId } from "./watch";
 
 /** Nightly GTFS → KV catalog refresh (UTC). Must match wrangler.toml. */
@@ -81,7 +86,10 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
     const watch = parseWatchFromRequest(parts[1], parts[2], url);
 
     if (request.method === "GET") {
-      const snapshot = await buildSnapshot(watch, env);
+      const storedObs = watch.webhook
+        ? await loadStoredObservations(env, watch)
+        : {};
+      const snapshot = await buildSnapshot(watch, env, storedObs);
       if (watch.webhook && url.searchParams.get("push") === "1") {
         const result = await sendWebhook(watch.webhook, snapshot);
         return json({ ...snapshot, pushed: result });
@@ -182,9 +190,14 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
 async function buildSnapshot(
   watch: ReturnType<typeof parseWatchFromRequest>,
   env: Env,
-  observations: Record<string, number> = {},
+  observations: StoredWatch["observations"] = {},
   cache?: EvalCache,
-): Promise<WatchSnapshot & { source: string; observations: Record<string, number> }> {
+): Promise<
+  WatchSnapshot & {
+    source: string;
+    observations: Record<string, TripObservation>;
+  }
+> {
   const stops =
     cache?.stops ?? (await loadStopsCatalog(env)).stops;
   if (cache && !cache.stops) cache.stops = stops;
@@ -199,6 +212,24 @@ async function buildSnapshot(
     source,
     observations: nextObs,
   };
+}
+
+async function loadStoredObservations(
+  env: Env,
+  watch: ReturnType<typeof parseWatchFromRequest>,
+): Promise<StoredWatch["observations"]> {
+  if (!watch.webhook) return {};
+  const raw = await env.WATCHES.get(watchId(watch));
+  if (!raw) return {};
+  try {
+    const stored = JSON.parse(raw) as StoredWatch;
+    if (normalizeWebhook(stored.webhook) !== normalizeWebhook(watch.webhook)) {
+      return {};
+    }
+    return stored.observations ?? {};
+  } catch {
+    return {};
+  }
 }
 
 async function runAllWatches(env: Env) {
@@ -288,16 +319,24 @@ async function runAllWatches(env: Env) {
 }
 
 function observationsEqual(
-  a: Record<string, number>,
-  b: Record<string, number>,
+  a: StoredWatch["observations"] = {},
+  b: StoredWatch["observations"] = {},
 ): boolean {
   const keysA = Object.keys(a);
   const keysB = Object.keys(b);
   if (keysA.length !== keysB.length) return false;
   for (const key of keysA) {
-    if (a[key] !== b[key]) return false;
+    if (!(key in b)) return false;
+    const left = normalizeObs(a[key]);
+    const right = normalizeObs(b[key]);
+    if (left.first !== right.first || left.last !== right.last) return false;
   }
   return true;
+}
+
+function normalizeObs(value: number | TripObservation): TripObservation {
+  if (typeof value === "number") return { first: value, last: value };
+  return value;
 }
 
 async function listWatchIds(env: Env): Promise<string[]> {
