@@ -1,11 +1,13 @@
 import {
+  createEvalCache,
   evaluateWatch,
   fingerprint,
   noteworthyDepartures,
+  type EvalCache,
 } from "./idsjmk";
 import { sendWebhook } from "./notify";
 import type { Env, StoredWatch, WatchSnapshot } from "./types";
-import { parseWatchFromRequest, watchId } from "./watch";
+import { isWatchDue, parseWatchFromRequest, watchId } from "./watch";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -69,10 +71,17 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
           400,
         );
       }
+      const id = watchId(watch);
+      const existingRaw = await env.WATCHES.get(id);
+      const existing = existingRaw
+        ? (JSON.parse(existingRaw) as StoredWatch)
+        : null;
       const stored: StoredWatch = {
         ...watch,
-        id: watchId(watch),
-        createdAt: new Date().toISOString(),
+        id,
+        createdAt: existing?.createdAt ?? new Date().toISOString(),
+        lastFingerprint: existing?.lastFingerprint,
+        observations: existing?.observations,
       };
       await env.WATCHES.put(stored.id, JSON.stringify(stored));
       await indexWatch(env, stored.id);
@@ -148,9 +157,10 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
 async function buildSnapshot(
   watch: ReturnType<typeof parseWatchFromRequest>,
   observations: Record<string, number> = {},
+  cache?: EvalCache,
 ): Promise<WatchSnapshot & { source: string; observations: Record<string, number> }> {
   const { departures, alerts, source, observations: nextObs } =
-    await evaluateWatch(watch, new Date(), observations);
+    await evaluateWatch(watch, new Date(), observations, cache);
   return {
     watch,
     checkedAt: new Date().toISOString(),
@@ -164,7 +174,13 @@ async function buildSnapshot(
 
 async function runAllWatches(env: Env) {
   const ids = await listWatchIds(env);
+  const cache = createEvalCache();
+  const now = new Date();
   const results = [];
+  let checked = 0;
+  let skippedInactive = 0;
+  let skippedUnchanged = 0;
+  let written = 0;
 
   for (const id of ids) {
     const raw = await env.WATCHES.get(id);
@@ -172,8 +188,15 @@ async function runAllWatches(env: Env) {
     const stored = JSON.parse(raw) as StoredWatch;
     if (!stored.webhook) continue;
 
-    const snapshot = await buildSnapshot(stored, stored.observations ?? {});
-    stored.observations = snapshot.observations;
+    if (!isWatchDue(stored, now)) {
+      skippedInactive += 1;
+      results.push({ id, notified: false, reason: "outside_window" });
+      continue;
+    }
+
+    checked += 1;
+    const previousObs = stored.observations ?? {};
+    const snapshot = await buildSnapshot(stored, previousObs, cache);
     const fp = fingerprint(
       snapshot.departures,
       snapshot.alerts,
@@ -182,29 +205,69 @@ async function runAllWatches(env: Env) {
 
     const shouldNotify =
       snapshot.noteworthy.length > 0 || snapshot.alerts.length > 0;
-    const changed = fp !== stored.lastFingerprint;
+    const fpChanged = fp !== stored.lastFingerprint;
+    const obsChanged = !observationsEqual(previousObs, snapshot.observations);
 
-    if (shouldNotify && changed) {
+    if (shouldNotify && fpChanged) {
       const pushed = await sendWebhook(stored.webhook, snapshot);
+      stored.observations = snapshot.observations;
       stored.lastFingerprint = fp;
       await env.WATCHES.put(id, JSON.stringify(stored));
+      written += 1;
       results.push({
         id,
         notified: true,
         pushed,
         noteworthy: snapshot.noteworthy.length,
       });
-    } else {
+      continue;
+    }
+
+    // Persist only when fingerprint or delay-tracking observations changed.
+    // Avoids burning Free-plan KV write quota on quiet minutes.
+    if (fpChanged || obsChanged) {
+      stored.observations = snapshot.observations;
+      stored.lastFingerprint = fp;
       await env.WATCHES.put(id, JSON.stringify(stored));
+      written += 1;
       results.push({
         id,
         notified: false,
         reason: !shouldNotify ? "nothing_noteworthy" : "unchanged",
+        saved: true,
+      });
+    } else {
+      skippedUnchanged += 1;
+      results.push({
+        id,
+        notified: false,
+        reason: !shouldNotify ? "nothing_noteworthy" : "unchanged",
+        saved: false,
       });
     }
   }
 
-  return { checked: ids.length, results };
+  return {
+    checked,
+    skippedInactive,
+    skippedUnchanged,
+    written,
+    total: ids.length,
+    results,
+  };
+}
+
+function observationsEqual(
+  a: Record<string, number>,
+  b: Record<string, number>,
+): boolean {
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+  for (const key of keysA) {
+    if (a[key] !== b[key]) return false;
+  }
+  return true;
 }
 
 async function listWatchIds(env: Env): Promise<string[]> {
@@ -218,15 +281,16 @@ async function listWatchIds(env: Env): Promise<string[]> {
 }
 
 async function indexWatch(env: Env, id: string): Promise<void> {
-  const ids = new Set(await listWatchIds(env));
-  ids.add(id);
-  await env.WATCHES.put("index:watches", JSON.stringify([...ids]));
+  const ids = await listWatchIds(env);
+  if (ids.includes(id)) return;
+  await env.WATCHES.put("index:watches", JSON.stringify([...ids, id]));
 }
 
 async function unindexWatch(env: Env, id: string): Promise<void> {
-  const ids = new Set(await listWatchIds(env));
-  ids.delete(id);
-  await env.WATCHES.put("index:watches", JSON.stringify([...ids]));
+  const ids = await listWatchIds(env);
+  const next = ids.filter((item) => item !== id);
+  if (next.length === ids.length) return;
+  await env.WATCHES.put("index:watches", JSON.stringify(next));
 }
 
 function normalizeWebhook(value: string | undefined): string {

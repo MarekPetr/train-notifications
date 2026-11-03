@@ -86,6 +86,13 @@ export function timeToMinutes(hhmm: string): number {
   return h * 60 + m;
 }
 
+export function minutesToHm(total: number): string {
+  const normalized = ((total % 1440) + 1440) % 1440;
+  const h = Math.floor(normalized / 60);
+  const m = normalized % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
 export function isWithinWindow(
   hhmm: string,
   timeFrom: string,
@@ -97,4 +104,34 @@ export function isWithinWindow(
   if (from <= to) return value >= from && value <= to;
   // přes půlnoc
   return value >= from || value <= to;
+}
+
+/** Prague wall-clock HH:MM for cron window checks. */
+export function pragueHm(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Prague",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+  const hour = parts.find((p) => p.type === "hour")?.value ?? "00";
+  const minute = parts.find((p) => p.type === "minute")?.value ?? "00";
+  return `${hour}:${minute}`;
+}
+
+/**
+ * Whether the cron should poll this watch now.
+ * Pads the configured window so delay tracking can start before first departure
+ * and catch late services after the nominal end.
+ */
+export function isWatchDue(
+  watch: WatchConfig,
+  now = new Date(),
+  padBeforeMinutes = 45,
+  padAfterMinutes = 15,
+): boolean {
+  const hm = pragueHm(now);
+  const from = minutesToHm(timeToMinutes(watch.timeFrom) - padBeforeMinutes);
+  const to = minutesToHm(timeToMinutes(watch.timeTo) + padAfterMinutes);
+  return isWithinWindow(hm, from, to);
 }

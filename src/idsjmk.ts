@@ -15,10 +15,21 @@ const DPMBINFO_URL = "https://dpmbinfo.dpmb.cz/api/Departures";
 const VYLUKY_URL =
   "https://gis.brno.cz/ags1/rest/services/Hosted/IDS_JMK_v%C3%BDluky_a_odklony_zdroj_GeoJSON/FeatureServer/0/query";
 
+/** Shared HTTP fetches for one cron/API batch (boards + alerts). */
+export interface EvalCache {
+  boards: Map<string, ReturnType<typeof fetchBoard>>;
+  alerts: Promise<AlertEvent[]> | null;
+}
+
+export function createEvalCache(): EvalCache {
+  return { boards: new Map(), alerts: null };
+}
+
 export async function evaluateWatch(
   watch: WatchConfig,
   now = new Date(),
   observations: Record<string, number> = {},
+  cache?: EvalCache,
 ): Promise<{
   departures: DepartureEvent[];
   alerts: AlertEvent[];
@@ -26,7 +37,7 @@ export async function evaluateWatch(
   source: string;
   observations: Record<string, number>;
 }> {
-  const board = await fetchBoard(watch.from);
+  const board = await getBoard(watch.from, cache);
   const nextObservations: Record<string, number> = {};
   const departures = board.departures
     .filter((dep) => destinationMatches(dep.destination, watch.to))
@@ -39,7 +50,7 @@ export async function evaluateWatch(
     });
 
   const lines = [...new Set(departures.map((d) => d.line))];
-  const alerts = (await fetchAlerts()).filter((alert) => {
+  const alerts = (await getAlerts(cache)).filter((alert) => {
     if (lines.length === 0) return false;
     return alert.routes.some((route) =>
       lines.some((line) => normalize(line) === normalize(route)),
@@ -70,6 +81,30 @@ export async function evaluateWatch(
     source: board.source,
     observations: nextObservations,
   };
+}
+
+async function getBoard(
+  from: string,
+  cache?: EvalCache,
+): Promise<{
+  stopName: string | null;
+  departures: BoardDeparture[];
+  source: string;
+}> {
+  if (!cache) return fetchBoard(from);
+  const key = normalize(from);
+  let pending = cache.boards.get(key);
+  if (!pending) {
+    pending = fetchBoard(from);
+    cache.boards.set(key, pending);
+  }
+  return pending;
+}
+
+async function getAlerts(cache?: EvalCache): Promise<AlertEvent[]> {
+  if (!cache) return fetchAlerts();
+  if (!cache.alerts) cache.alerts = fetchAlerts();
+  return cache.alerts;
 }
 
 async function fetchBoard(from: string): Promise<{

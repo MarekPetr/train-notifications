@@ -4,7 +4,8 @@ compatibility_date = "2025-10-11"
 compatibility_flags = ["nodejs_compat"]
 
 [triggers]
-crons = ["* * * * *"]
+# Every 2 minutes: halves Free KV/API burn vs every minute; still fine for delays.
+crons = ["*/2 * * * *"]
 
 [[kv_namespaces]]
 binding = "WATCHES"
