@@ -1,6 +1,7 @@
 import bundledStops from "./data/stops.json";
-import { buildStopsFromGtfs } from "./gtfsCatalog";
+import { buildCatalogFromGtfs } from "./gtfsCatalog";
 import type { Env } from "./types";
+import { clearViaMemoryCache, saveViaBeyond } from "./via";
 
 export interface StopRef {
   name: string;
@@ -13,6 +14,7 @@ export interface StopsCatalogMeta {
   updatedAt: string;
   count: number;
   source: "kv" | "bundle" | "gtfs";
+  viaPairCount?: number;
 }
 
 const CATALOG_KEY = "catalog:stops";
@@ -90,17 +92,21 @@ export function resolveStop(query: string, stops: StopRef[]): StopRef | null {
   return best?.stop ?? null;
 }
 
-/** Fetch GTFS, parse stops, write KV. Used by daily cron and POST /api/refresh-stops. */
+/** Fetch GTFS, parse stops + via index, write KV. Daily cron / POST /api/refresh-stops. */
 export async function refreshStopsCatalog(env: Env): Promise<StopsCatalogMeta> {
-  const stops = await buildStopsFromGtfs();
+  const { stops, viaBeyond } = await buildCatalogFromGtfs();
   if (stops.length < 100) {
     throw new Error(`GTFS parse returned too few stops (${stops.length})`);
   }
 
+  const updatedAt = new Date().toISOString();
+  const viaMeta = await saveViaBeyond(env, viaBeyond, updatedAt);
+
   const meta: StopsCatalogMeta = {
-    updatedAt: new Date().toISOString(),
+    updatedAt,
     count: stops.length,
     source: "gtfs",
+    viaPairCount: viaMeta.pairCount,
   };
 
   await env.WATCHES.put(CATALOG_KEY, JSON.stringify(stops));
@@ -115,6 +121,7 @@ export async function refreshStopsCatalog(env: Env): Promise<StopsCatalogMeta> {
 export function clearStopsMemoryCache(): void {
   memoryCatalog = null;
   memoryMeta = null;
+  clearViaMemoryCache();
 }
 
 function normalize(value: string): string {

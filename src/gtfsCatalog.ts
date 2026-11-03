@@ -1,16 +1,150 @@
 import type { StopRef } from "./stops";
+import type { ViaBeyondIndex } from "./via";
 
 const GTFS_URL = "https://kordis-jmk.cz/gtfs/gtfs.zip";
 
-/** Download KORDIS GTFS and build the stop catalog (same rules as build-stops.mjs). */
-export async function buildStopsFromGtfs(): Promise<StopRef[]> {
+const TRAIN_ROUTE_RE = /^(S\d+|R\d+|os|sp|ex|ic|ec|en|rj|le)\b/i;
+
+/** Download KORDIS GTFS and build stop + via-beyond catalogs. */
+export async function buildCatalogFromGtfs(): Promise<{
+  stops: StopRef[];
+  viaBeyond: ViaBeyondIndex;
+}> {
   const res = await fetch(GTFS_URL);
   if (!res.ok) {
     throw new Error(`GTFS download failed: HTTP ${res.status}`);
   }
   const zip = await res.arrayBuffer();
   const stopsTxt = await extractZipEntry(zip, "stops.txt");
-  return parseStopsTxt(new TextDecoder("utf-8").decode(stopsTxt));
+  const routesTxt = await extractZipEntry(zip, "routes.txt");
+  const tripsTxt = await extractZipEntry(zip, "trips.txt");
+  const stopTimesTxt = await extractZipEntry(zip, "stop_times.txt");
+  const decoder = new TextDecoder("utf-8");
+  const stops = parseStopsTxt(decoder.decode(stopsTxt));
+  const viaBeyond = buildViaBeyondIndex(
+    decoder.decode(routesTxt),
+    decoder.decode(tripsTxt),
+    decoder.decode(stopTimesTxt),
+  );
+  return { stops, viaBeyond };
+}
+
+/** @deprecated prefer buildCatalogFromGtfs — kept for callers that only need stops. */
+export async function buildStopsFromGtfs(): Promise<StopRef[]> {
+  const { stops } = await buildCatalogFromGtfs();
+  return stops;
+}
+
+/** Train patterns: fromStopId|toStopId → terminus ids continuing past `to`. */
+export function buildViaBeyondIndex(
+  routesTxt: string,
+  tripsTxt: string,
+  stopTimesTxt: string,
+): ViaBeyondIndex {
+  const routeShort = new Map<string, string>();
+  {
+    const lines = routesTxt.replace(/^\uFEFF/, "").split(/\r?\n/).filter(Boolean);
+    if (lines.length < 2) return {};
+    const headers = splitCsvLine(lines[0]);
+    const idx = Object.fromEntries(headers.map((h, i) => [h, i]));
+    for (const line of lines.slice(1)) {
+      const cols = splitCsvLine(line);
+      routeShort.set(
+        cols[idx.route_id] || "",
+        (cols[idx.route_short_name] || "").trim(),
+      );
+    }
+  }
+
+  const tripIsTrain = new Map<string, boolean>();
+  {
+    const lines = tripsTxt.replace(/^\uFEFF/, "").split(/\r?\n/).filter(Boolean);
+    if (lines.length < 2) return {};
+    const headers = splitCsvLine(lines[0]);
+    const idx = Object.fromEntries(headers.map((h, i) => [h, i]));
+    for (const line of lines.slice(1)) {
+      const cols = splitCsvLine(line);
+      const short = routeShort.get(cols[idx.route_id] || "") || "";
+      tripIsTrain.set(cols[idx.trip_id] || "", TRAIN_ROUTE_RE.test(short));
+    }
+  }
+
+  const patterns = new Set<string>();
+  {
+    const lines = stopTimesTxt
+      .replace(/^\uFEFF/, "")
+      .split(/\r?\n/)
+      .filter(Boolean);
+    if (lines.length < 2) return {};
+    const headers = splitCsvLine(lines[0]);
+    const idx = Object.fromEntries(headers.map((h, i) => [h, i]));
+    let curTrip: string | null = null;
+    let curTrain = false;
+    let seq: number[] = [];
+
+    const flush = () => {
+      if (curTrain && seq.length >= 2) {
+        const ids: number[] = [];
+        for (const s of seq) {
+          if (!ids.length || ids[ids.length - 1] !== s) ids.push(s);
+        }
+        if (ids.length >= 2) patterns.add(ids.join(">"));
+      }
+      seq = [];
+    };
+
+    for (const line of lines.slice(1)) {
+      const cols = splitCsvLine(line);
+      const tid = cols[idx.trip_id] || "";
+      const sid = parseUId(cols[idx.stop_id] || "");
+      if (sid == null) continue;
+      if (curTrip === null) {
+        curTrip = tid;
+        curTrain = tripIsTrain.get(tid) === true;
+      }
+      if (tid !== curTrip) {
+        flush();
+        curTrip = tid;
+        curTrain = tripIsTrain.get(tid) === true;
+      }
+      seq.push(sid);
+    }
+    flush();
+  }
+
+  const viaBeyond = new Map<string, Set<number>>();
+  for (const key of patterns) {
+    const ids = key.split(">").map(Number);
+    const term = ids[ids.length - 1];
+    for (let i = 0; i < ids.length; i++) {
+      const seen = new Set<number>();
+      for (let j = i + 1; j < ids.length; j++) {
+        const to = ids[j];
+        if (seen.has(to)) continue;
+        seen.add(to);
+        if (to === term) continue;
+        const pair = `${ids[i]}|${to}`;
+        let set = viaBeyond.get(pair);
+        if (!set) {
+          set = new Set();
+          viaBeyond.set(pair, set);
+        }
+        set.add(term);
+      }
+    }
+  }
+
+  const out: ViaBeyondIndex = {};
+  for (const [pair, set] of viaBeyond) {
+    out[pair] = [...set].sort((a, b) => a - b);
+  }
+  return out;
+}
+
+function parseUId(raw: string): number | null {
+  if (!raw.startsWith("U")) return null;
+  const match = raw.match(/^U0*(\d+)/);
+  return match ? Number(match[1]) : null;
 }
 
 export function parseStopsTxt(text: string): StopRef[] {

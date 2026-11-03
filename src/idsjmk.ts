@@ -1,4 +1,5 @@
 import { resolveStop, type StopRef } from "./stops";
+import type { ViaBeyondIndex } from "./via";
 import { isWithinWindow } from "./watch";
 import type {
   AlertEvent,
@@ -32,10 +33,14 @@ export interface EvalCache {
   boards: Map<string, ReturnType<typeof fetchBoard>>;
   alerts: Promise<AlertEvent[]> | null;
   stops?: StopRef[];
+  viaBeyond?: ViaBeyondIndex;
 }
 
-export function createEvalCache(stops?: StopRef[]): EvalCache {
-  return { boards: new Map(), alerts: null, stops };
+export function createEvalCache(
+  stops?: StopRef[],
+  viaBeyond?: ViaBeyondIndex,
+): EvalCache {
+  return { boards: new Map(), alerts: null, stops, viaBeyond };
 }
 
 export async function evaluateWatch(
@@ -51,10 +56,19 @@ export async function evaluateWatch(
   source: string;
   observations: Record<string, TripObservation>;
 }> {
+  const viaBeyond = cache?.viaBeyond ?? {};
   const board = await getBoard(watch.from, stops, cache);
   const nextObservations: Record<string, TripObservation> = {};
   const departures = board.departures
-    .filter((dep) => destinationMatches(dep.destination, watch.to))
+    .filter((dep) =>
+      destinationServesWatch(
+        dep.destination,
+        watch.to,
+        watch.from,
+        stops,
+        viaBeyond,
+      ),
+    )
     .map((dep) =>
       toDepartureEvent(dep, now, watch, observations, nextObservations),
     )
@@ -477,13 +491,51 @@ async function fetchAlerts(): Promise<AlertEvent[]> {
   });
 }
 
-function destinationMatches(destination: string, wantedTo: string): boolean {
-  const dest = normalize(destination);
-  const to = normalize(wantedTo);
-  if (!to) return true;
-  if (dest.includes(to) || to.includes(dest)) return true;
-  if (to.includes("brno") && /(brno|brna|hlavn)/.test(dest)) return true;
+/**
+ * Board FinalStop matches watch `to` either directly, or as a train terminus
+ * beyond `to` according to the GTFS via-beyond index in KV.
+ */
+function destinationServesWatch(
+  boardDestination: string,
+  wantedTo: string,
+  from: string,
+  stops: StopRef[],
+  viaBeyond: ViaBeyondIndex,
+): boolean {
+  if (namesLooselyMatch(boardDestination, wantedTo)) return true;
+  if (
+    normalize(wantedTo).includes("brno") &&
+    /(brno|brna|hlavn)/.test(normalize(boardDestination))
+  ) {
+    return true;
+  }
+
+  const fromStop = resolveStop(from, stops);
+  const toStop = resolveStop(wantedTo, stops);
+  if (!fromStop || !toStop) return false;
+
+  const beyond = viaBeyond[`${fromStop.stopId}|${toStop.stopId}`];
+  if (!beyond?.length) return false;
+
+  const boardStop = resolveStop(boardDestination, stops);
+  if (boardStop && beyond.includes(boardStop.stopId)) return true;
+
+  const stopsById = new Map<number, StopRef>();
+  for (const stop of stops) {
+    if (!stopsById.has(stop.stopId)) stopsById.set(stop.stopId, stop);
+  }
+  for (const termId of beyond) {
+    const term = stopsById.get(termId);
+    if (term && namesLooselyMatch(boardDestination, term.name)) return true;
+  }
   return false;
+}
+
+function namesLooselyMatch(a: string, b: string): boolean {
+  const left = normalize(a);
+  const right = normalize(b);
+  if (!left || !right) return false;
+  return left.includes(right) || right.includes(left);
 }
 
 function normalize(value: string): string {

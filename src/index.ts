@@ -13,6 +13,7 @@ import type {
   TripObservation,
   WatchSnapshot,
 } from "./types";
+import { loadViaBeyond } from "./via";
 import { isWatchDue, parseWatchFromRequest, watchId } from "./watch";
 
 /** Nightly GTFS → KV catalog refresh (UTC). Must match wrangler.toml. */
@@ -198,11 +199,21 @@ async function buildSnapshot(
     observations: Record<string, TripObservation>;
   }
 > {
-  const stops =
-    cache?.stops ?? (await loadStopsCatalog(env)).stops;
-  if (cache && !cache.stops) cache.stops = stops;
+  const activeCache = cache ?? createEvalCache();
+  if (!activeCache.stops) {
+    activeCache.stops = (await loadStopsCatalog(env)).stops;
+  }
+  if (!activeCache.viaBeyond) {
+    activeCache.viaBeyond = (await loadViaBeyond(env)).via;
+  }
   const { departures, alerts, source, observations: nextObs } =
-    await evaluateWatch(watch, new Date(), observations, cache, stops);
+    await evaluateWatch(
+      watch,
+      new Date(),
+      observations,
+      activeCache,
+      activeCache.stops,
+    );
   return {
     watch,
     checkedAt: new Date().toISOString(),
@@ -235,7 +246,8 @@ async function loadStoredObservations(
 async function runAllWatches(env: Env) {
   const ids = await listWatchIds(env);
   const { stops } = await loadStopsCatalog(env);
-  const cache = createEvalCache(stops);
+  const { via } = await loadViaBeyond(env);
+  const cache = createEvalCache(stops, via);
   const now = new Date();
   const results = [];
   let checked = 0;

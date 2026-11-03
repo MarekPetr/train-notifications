@@ -87,3 +87,6 @@ fs.mkdirSync(docsDir, { recursive: true });
 const names = stops.map((s) => s.name);
 fs.writeFileSync(path.join(docsDir, "stops.json"), JSON.stringify(names));
 console.log(`Wrote ${names.length} stop names to docs/stops.json`);
+console.log(
+  "Note: via-beyond index is built by Worker refresh (KV catalog:via-beyond), not this script.",
+);
