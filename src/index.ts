@@ -112,13 +112,10 @@ async function buildSnapshot(
   watch: ReturnType<typeof parseWatchFromRequest>,
   observations: Record<string, number> = {},
 ): Promise<WatchSnapshot & { source: string; observations: Record<string, number> }> {
-  const { departures, alerts, stopName, source, observations: nextObs } =
+  const { departures, alerts, source, observations: nextObs } =
     await evaluateWatch(watch, new Date(), observations);
   return {
-    watch: {
-      ...watch,
-      from: stopName ?? watch.from,
-    },
+    watch,
     checkedAt: new Date().toISOString(),
     departures,
     alerts,
