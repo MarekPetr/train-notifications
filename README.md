@@ -113,22 +113,22 @@ curl.exe --get "http://127.0.0.1:8787/watch/Tisnov/Brno" --data-urlencode "od=06
 
 ## Webovka (GitHub Pages)
 
-Statické nastavení je ve složce `docs/`:
+Statické nastavení je ve složce `web/`:
 
-1. Lokálně otevři `docs/index.html` přes static server (kvůli `stops.json`), např. `npx serve docs`.
+1. Lokálně: `npx serve web` (kvůli načtení `stops.json`).
 2. Do pole **Worker URL** dej `http://127.0.0.1:8787` (nebo po deployi `https://….workers.dev`).
 3. Stanice **Od** / **Do** vybírej z nápovědy (katalog IDS JMK).
 4. Vyplň časové okno a MacroDroid webhook → **Registrovat** / **Test push**.
 
-Seznam zastávek (`docs/stops.json`) se generuje spolu s `npm run build:stops`.
+Seznam zastávek (`web/stops.json`) se generuje spolu s `npm run build:stops`.
 
 ### Zapnutí GitHub Pages
 
+UI je ve `web/` (ne v `docs/`). Nejjednodušší je workflow v `.github/workflows/pages.yml`:
+
 1. Pushni repo na GitHub.
-2. **Settings → Pages → Build and deployment**
-3. Source: **Deploy from a branch**
-4. Branch: `main` / složka `/docs`
-5. Po chvíli bude UI na `https://<user>.github.io/<repo>/`
+2. **Settings → Pages → Source: GitHub Actions**
+3. Po pushi na `main` se `web/` nasadí na `https://<user>.github.io/<repo>/`
 
 Worker má CORS (`Access-Control-Allow-Origin: *`), takže Pages můžou volat API z prohlížeče.
 
