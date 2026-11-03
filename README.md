@@ -37,7 +37,7 @@ Přestup Tišnov → Královo Pole → Hrnčířská tedy potřebuje **dva watch
 
 ```text
 # 1) vlak — cíl spoje je typicky Brno hl.n., ne Královo Pole
-PUT /watch/Tišnov/Brno?od=06:30&do=08:30&webhook=https://trigger.macrodroid.com/.../vlak&minDelay=5
+PUT /watch/Tišnov/Královo_Pole?od=06:30&do=08:30&webhook=https://trigger.macrodroid.com/.../vlak&minDelay=5
 
 # 2) tramvaj z Králova Pole na Hrnčířskou
 PUT /watch/Královo_Pole/Hrnčířská?od=06:30&do=08:30&webhook=https://trigger.macrodroid.com/.../tramvaj&minDelay=5
