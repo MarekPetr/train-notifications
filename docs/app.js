@@ -1,9 +1,14 @@
 const form = document.getElementById("form");
 const out = document.getElementById("out");
-const stopsList = document.getElementById("stops");
 const stopsStatus = document.getElementById("stopsStatus");
 const watchList = document.getElementById("watchList");
 const watchListStatus = document.getElementById("watchListStatus");
+const fromCombo = createStopCombo(document.getElementById("from"), {
+  id: "from-list",
+});
+const toCombo = createStopCombo(document.getElementById("to"), {
+  id: "to-list",
+});
 /** @type {Set<string>} */
 let stopNames = new Set();
 /** @type {Array<Record<string, unknown>>} */
@@ -48,13 +53,8 @@ async function loadStops() {
       a.localeCompare(b, "cs"),
     );
     stopNames = new Set(all);
-    const frag = document.createDocumentFragment();
-    for (const name of all) {
-      const opt = document.createElement("option");
-      opt.value = name;
-      frag.appendChild(opt);
-    }
-    stopsList.replaceChildren(frag);
+    fromCombo.setItems(all);
+    toCombo.setItems(all);
     const src =
       data && !Array.isArray(data) && data.source
         ? ` · zdroj ${data.source}`

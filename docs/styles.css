@@ -85,6 +85,43 @@ input:focus {
   outline-offset: 1px;
 }
 
+.combo {
+  position: relative;
+}
+
+.combo-list {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin: 0;
+  padding: 0.25rem 0;
+  list-style: none;
+  max-height: min(16rem, 50vh);
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  box-shadow: 0 8px 24px rgb(28 25 20 / 12%);
+}
+
+.combo-option {
+  padding: 0.7rem 0.85rem;
+  min-height: 2.75rem;
+  display: flex;
+  align-items: center;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.combo-option:hover,
+.combo-option.is-active {
+  background: #efe8da;
+  color: var(--ink);
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;

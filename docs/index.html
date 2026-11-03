@@ -21,7 +21,6 @@
             <input
               id="from"
               name="from"
-              list="stops"
               required
               autocomplete="off"
               placeholder="Začni psát název zastávky"
@@ -33,7 +32,6 @@
             <input
               id="to"
               name="to"
-              list="stops"
               required
               autocomplete="off"
               placeholder="Začni psát název zastávky"
@@ -41,7 +39,6 @@
             />
           </label>
         </div>
-        <datalist id="stops"></datalist>
         <p id="stopsStatus" class="hint">Načítám seznam zastávek…</p>
 
         <div class="row">
@@ -104,6 +101,7 @@
       <pre id="out" aria-live="polite">Připraveno.</pre>
     </main>
     <script src="config.js"></script>
+    <script src="stopCombo.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
