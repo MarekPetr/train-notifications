@@ -1,0 +1,16 @@
+name = "train-notifications"
+main = "src/index.ts"
+compatibility_date = "2025-10-11"
+compatibility_flags = ["nodejs_compat"]
+
+[triggers]
+crons = ["* * * * *"]
+
+[[kv_namespaces]]
+binding = "WATCHES"
+id = "local-watches"
+preview_id = "local-watches"
+
+[vars]
+MIN_DELAY_MINUTES = "5"
+TZ = "Europe/Prague"
