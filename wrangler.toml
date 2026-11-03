@@ -13,3 +13,8 @@ preview_id = "554e20aa885942e79d999f86b7e07bb0"
 
 [vars]
 TZ = "Europe/Prague"
+
+[assets]
+directory = "./docs"
+binding = "ASSETS"
+run_worker_first = true

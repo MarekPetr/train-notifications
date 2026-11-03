@@ -1,5 +1,6 @@
 export interface Env {
   WATCHES: KVNamespace;
+  ASSETS: Fetcher;
   TZ: string;
 }
 

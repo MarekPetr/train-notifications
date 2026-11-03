@@ -17,8 +17,10 @@ const isLocalHost =
 
 function workerBase() {
   if (isLocalHost) return "http://127.0.0.1:8787";
-  const url = window.TRAIN_NOTIFICATIONS_CONFIG?.productionWorkerUrl || "";
-  return url.replace(/\/$/, "");
+  const configured =
+    window.TRAIN_NOTIFICATIONS_CONFIG?.productionWorkerUrl || "";
+  if (configured) return configured.replace(/\/$/, "");
+  return location.origin;
 }
 
 function value(id) {
@@ -109,11 +111,6 @@ function persistForm() {
 
 async function api(method, pathWithQuery) {
   const base = workerBase();
-  if (!base) {
-    throw new Error(
-      "Chybí productionWorkerUrl v config.js — doplň URL Cloudflare Workeru.",
-    );
-  }
   const res = await fetch(`${base}${pathWithQuery}`, { method });
   const text = await res.text();
   let body;
@@ -255,12 +252,6 @@ async function refreshWatchList() {
     renderWatchList();
     return;
   }
-  if (!workerBase()) {
-    watchListStatus.textContent =
-      "Chybí productionWorkerUrl v config.js — seznam nejde načíst.";
-    return;
-  }
-
   watchListStatus.textContent = "Načítám seznam…";
   try {
     const data = await api(

@@ -119,29 +119,31 @@ curl.exe --get "http://127.0.0.1:8787/watch/Tisnov/Brno" --data-urlencode "od=06
 - Výluky: otevřená data Brna (IDS JMK výluky/odklony)
 - Zpoždění: explicitní `+N` z boardu, jinak skluz live odhadu mezi kontrolami u registrovaných watchů
 
-## Webovka (GitHub Pages)
+## Webovka (Cloudflare Worker Assets)
 
-Statické nastavení je ve složce `docs/` (kvůli GitHub Pages — nabízí jen `/` nebo `/docs`):
+UI je ve složce `docs/` a nasazuje se spolu s Workerem (Assets). Produkční URL je stejná
+jako API: `https://train-notifications.<subdomain>.workers.dev`.
 
-1. Lokálně: `npx serve docs` (kvůli načtení `stops.json`) — API jde na `http://127.0.0.1:8787`.
-2. Na GitHub Pages je Worker URL natvrdo v `docs/config.js` (`productionWorkerUrl`), ve formuláři se nezobrazuje.
-3. Stanice **Od** / **Do** vybírej z nápovědy (katalog IDS JMK).
-4. Vyplň časové okno a MacroDroid webhook → **Registrovat** / **Test push**.
+1. Lokálně: `npm run dev` — UI i API na `http://127.0.0.1:8787`.
+   Alternativa: `npx serve docs` + Worker zvlášť (API na `:8787`, CORS je zapnuté).
+2. Stanice **Od** / **Do** vybírej z nápovědy (katalog IDS JMK).
+3. Vyplň časové okno a MacroDroid webhook → **Uložit** / **Test push**.
 
 Seznam zastávek (`docs/stops.json`) se generuje spolu s `npm run build:stops`.
+Krátké API usage JSON: `GET /api`.
 
-### Zapnutí GitHub Pages
+### Privátní přístup (Cloudflare Access)
 
-1. Pushni repo na GitHub.
-2. **Settings → Pages → Build and deployment**
-3. Source: **Deploy from a branch**
-4. Branch: `main` / složka **`/docs`**
-5. UI bude na `https://<user>.github.io/<repo>/`
+Celý hostname zamkni přes Zero Trust Access, ať UI i API vidíš jen ty.
+Cron (push do MacroDroidu) Access neprochází.
 
-Worker má CORS (`Access-Control-Allow-Origin: *`), takže Pages můžou volat API z prohlížeče.
+1. Po deployi otevři [Cloudflare Zero Trust](https://one.dash.cloudflare.com)
+2. **Access** → **Applications** → **Add an application** → **Self-hosted**
+3. Application domain: `train-notifications.<subdomain>.workers.dev` (celý hostname)
+4. Policy: **Allow** → Include → **Emails** → tvůj e-mail
+5. Login: One-time PIN (e-mail) nebo Google
 
-Až bude Worker úspěšně nasazený, v Cloudflare zjisti veřejnou URL
-(`https://train-notifications.<subdomain>.workers.dev`) a případně ji uprav v `docs/config.js`.
+Veřejný GitHub Pages vypni (**Settings → Pages → None**), ať nezůstane otevřená kopie.
 
 ## Deploy Workeru
 

@@ -34,20 +34,18 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const parts = url.pathname.split("/").filter(Boolean);
 
-  if (request.method === "GET" && (url.pathname === "/" || url.pathname === "")) {
+  if (request.method === "GET" && url.pathname === "/api") {
     return json({
       service: "train-notifications",
       usage: {
-        status:
-          "GET /watch/{od}/{do}?od=06:00&do=09:00",
+        status: "GET /watch/{od}/{do}?od=06:00&do=09:00",
         register:
           "PUT /watch/{od}/{do}?od=06:00&do=09:00&webhook=https://trigger.macrodroid.com/...",
         unregister:
           "DELETE /watch/{od}/{do}?od=06:00&do=09:00&webhook=https://trigger.macrodroid.com/...",
         list: "GET /watches?webhook=https://trigger.macrodroid.com/...",
         deleteById: "DELETE /watches/{id}?webhook=...",
-        example:
-          "/watch/Tišnov/Brno?od=06:30&do=08:30&webhook=URL&minDelay=5",
+        example: "/watch/Tišnov/Brno?od=06:30&do=08:30&webhook=URL&minDelay=5",
       },
     });
   }
@@ -144,7 +142,7 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
     return json(result);
   }
 
-  return json({ error: "Not found" }, 404);
+  return env.ASSETS.fetch(request);
 }
 
 async function buildSnapshot(
