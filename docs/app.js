@@ -79,10 +79,14 @@ function query(extra = {}, watch = null) {
   const params = new URLSearchParams({
     od: watch?.timeFrom ?? value("timeFrom"),
     do: watch?.timeTo ?? value("timeTo"),
-    minDelay: String(watch?.minDelay ?? (value("minDelay") || "5")),
     webhook: watch?.webhook ?? value("webhook"),
     ...extra,
   });
+  const rawMin =
+    watch && "minDelay" in watch ? watch.minDelay : value("minDelay");
+  if (rawMin != null && String(rawMin).trim() !== "") {
+    params.set("minDelay", String(rawMin));
+  }
   return params.toString();
 }
 
@@ -152,7 +156,10 @@ function fillForm(watch) {
   setValue("to", watch.to);
   setValue("timeFrom", watch.timeFrom);
   setValue("timeTo", watch.timeTo);
-  setValue("minDelay", String(watch.minDelay ?? 5));
+  setValue(
+    "minDelay",
+    watch.minDelay == null ? "" : String(watch.minDelay),
+  );
   if (watch.webhook) setValue("webhook", watch.webhook);
   setValue("editingId", watch.id || "");
   persistForm();
@@ -195,7 +202,10 @@ function renderWatchList() {
 
     const meta = document.createElement("div");
     meta.className = "watch-item-meta";
-    meta.textContent = `${watch.timeFrom}–${watch.timeTo} · min. zpoždění ${watch.minDelay ?? 5} min`;
+    meta.textContent =
+      watch.minDelay == null
+        ? `${watch.timeFrom}–${watch.timeTo} · jen zrušení`
+        : `${watch.timeFrom}–${watch.timeTo} · min. zpoždění ${watch.minDelay} min`;
 
     main.append(route, meta);
 

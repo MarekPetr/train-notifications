@@ -23,7 +23,6 @@ export function parseWatchFromRequest(
   fromRaw: string,
   toRaw: string,
   url: URL,
-  defaultMinDelay: number,
 ): WatchConfig {
   const from = decodeStation(fromRaw);
   const to = decodeStation(toRaw);
@@ -45,11 +44,18 @@ export function parseWatchFromRequest(
     url.searchParams.get("callback") ??
     undefined;
 
-  const minDelayRaw =
-    url.searchParams.get("minDelay") ?? url.searchParams.get("zpozdeni");
-  const minDelay = minDelayRaw ? Number(minDelayRaw) : defaultMinDelay;
-  if (!Number.isFinite(minDelay) || minDelay < 0) {
-    throw new Error("minDelay musí být nezáporné číslo");
+  const minDelayRaw = (
+    url.searchParams.get("minDelay") ??
+    url.searchParams.get("zpozdeni") ??
+    ""
+  ).trim();
+  // Prázdné = nesledovat zpoždění, jen zrušení spojů.
+  let minDelay: number | null = null;
+  if (minDelayRaw !== "") {
+    minDelay = Number(minDelayRaw);
+    if (!Number.isFinite(minDelay) || minDelay < 0) {
+      throw new Error("minDelay musí být nezáporné číslo");
+    }
   }
 
   return { from, to, timeFrom, timeTo, webhook, minDelay };

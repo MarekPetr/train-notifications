@@ -1,6 +1,5 @@
 export interface Env {
   WATCHES: KVNamespace;
-  MIN_DELAY_MINUTES: string;
   TZ: string;
 }
 
@@ -10,7 +9,8 @@ export interface WatchConfig {
   timeFrom: string;
   timeTo: string;
   webhook?: string;
-  minDelay: number;
+  /** Práh zpoždění v minutách; `null` = sledovat jen zrušení (ne zpoždění). */
+  minDelay: number | null;
 }
 
 export interface DepartureEvent {

@@ -53,13 +53,7 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
   }
 
   if (parts[0] === "watch" && parts.length >= 3) {
-    const defaultMinDelay = Number(env.MIN_DELAY_MINUTES || "5");
-    const watch = parseWatchFromRequest(
-      parts[1],
-      parts[2],
-      url,
-      defaultMinDelay,
-    );
+    const watch = parseWatchFromRequest(parts[1], parts[2], url);
 
     if (request.method === "GET") {
       const snapshot = await buildSnapshot(watch);

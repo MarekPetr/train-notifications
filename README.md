@@ -32,7 +32,7 @@ DELETE /watches/{id}
 | `/watch/{od}/{do}` | Stanice odkud / kam |
 | `od`, `do` | Časové okno odjezdů (`HH:MM`) |
 | `webhook` | MacroDroid incoming webhook |
-| `minDelay` | Práh zpoždění v minutách (default `5`) |
+| `minDelay` | Práh zpoždění v minutách; bez parametru / prázdné = jen zrušení spojů |
 | `GET /watches?webhook=` | Seznam jen pro danou MacroDroid URL (bez `webhook` nic nevrací) |
 | `DELETE /watches/{id}?webhook=` | Smazání konkrétního sledování (stejná URL musí sedět) |
 

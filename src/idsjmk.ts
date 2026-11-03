@@ -247,11 +247,17 @@ function toDepartureEvent(
 
   let status: DepartureEvent["status"] = "unknown";
   if (parsed.isCancelled) status = "cancelled";
-  else if (delayMinutes != null && delayMinutes >= watch.minDelay)
+  else if (
+    watch.minDelay != null &&
+    delayMinutes != null &&
+    delayMinutes >= watch.minDelay
+  )
     status = "delayed";
   else if (
     delayMinutes === 0 ||
-    (delayMinutes != null && delayMinutes < watch.minDelay)
+    (watch.minDelay != null &&
+      delayMinutes != null &&
+      delayMinutes < watch.minDelay)
   )
     status = "on_time";
 
@@ -437,20 +443,22 @@ function formatHm(date: Date): string {
 
 export function noteworthyDepartures(
   departures: DepartureEvent[],
-  minDelay: number,
+  minDelay: number | null,
 ): DepartureEvent[] {
-  return departures.filter(
-    (d) =>
-      d.status === "cancelled" ||
-      (d.delayMinutes != null && d.delayMinutes >= minDelay) ||
-      d.status === "delayed",
-  );
+  return departures.filter((d) => {
+    if (d.status === "cancelled") return true;
+    if (minDelay == null) return false;
+    return (
+      d.status === "delayed" ||
+      (d.delayMinutes != null && d.delayMinutes >= minDelay)
+    );
+  });
 }
 
 export function fingerprint(
   departures: DepartureEvent[],
   alerts: AlertEvent[],
-  minDelay: number,
+  minDelay: number | null,
 ): string {
   const depPart = noteworthyDepartures(departures, minDelay)
     .map(
