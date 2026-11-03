@@ -1,4 +1,4 @@
-import { resolveStop } from "./stops";
+import { resolveStop, type StopRef } from "./stops";
 import { isWithinWindow } from "./watch";
 import type { AlertEvent, DepartureEvent, WatchConfig } from "./types";
 
@@ -19,10 +19,11 @@ const VYLUKY_URL =
 export interface EvalCache {
   boards: Map<string, ReturnType<typeof fetchBoard>>;
   alerts: Promise<AlertEvent[]> | null;
+  stops?: StopRef[];
 }
 
-export function createEvalCache(): EvalCache {
-  return { boards: new Map(), alerts: null };
+export function createEvalCache(stops?: StopRef[]): EvalCache {
+  return { boards: new Map(), alerts: null, stops };
 }
 
 export async function evaluateWatch(
@@ -30,6 +31,7 @@ export async function evaluateWatch(
   now = new Date(),
   observations: Record<string, number> = {},
   cache?: EvalCache,
+  stops: StopRef[] = cache?.stops ?? [],
 ): Promise<{
   departures: DepartureEvent[];
   alerts: AlertEvent[];
@@ -37,7 +39,7 @@ export async function evaluateWatch(
   source: string;
   observations: Record<string, number>;
 }> {
-  const board = await getBoard(watch.from, cache);
+  const board = await getBoard(watch.from, stops, cache);
   const nextObservations: Record<string, number> = {};
   const departures = board.departures
     .filter((dep) => destinationMatches(dep.destination, watch.to))
@@ -85,17 +87,18 @@ export async function evaluateWatch(
 
 async function getBoard(
   from: string,
+  stops: StopRef[],
   cache?: EvalCache,
 ): Promise<{
   stopName: string | null;
   departures: BoardDeparture[];
   source: string;
 }> {
-  if (!cache) return fetchBoard(from);
+  if (!cache) return fetchBoard(from, stops);
   const key = normalize(from);
   let pending = cache.boards.get(key);
   if (!pending) {
-    pending = fetchBoard(from);
+    pending = fetchBoard(from, stops);
     cache.boards.set(key, pending);
   }
   return pending;
@@ -107,12 +110,15 @@ async function getAlerts(cache?: EvalCache): Promise<AlertEvent[]> {
   return cache.alerts;
 }
 
-async function fetchBoard(from: string): Promise<{
+async function fetchBoard(
+  from: string,
+  stops: StopRef[],
+): Promise<{
   stopName: string | null;
   departures: BoardDeparture[];
   source: string;
 }> {
-  const catalogStop = resolveStop(from);
+  const catalogStop = resolveStop(from, stops);
   if (!catalogStop) {
     return { stopName: null, departures: [], source: "unresolved" };
   }

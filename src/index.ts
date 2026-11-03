@@ -6,8 +6,12 @@ import {
   type EvalCache,
 } from "./idsjmk";
 import { sendWebhook } from "./notify";
+import { loadStopsCatalog, refreshStopsCatalog } from "./stops";
 import type { Env, StoredWatch, WatchSnapshot } from "./types";
 import { isWatchDue, parseWatchFromRequest, watchId } from "./watch";
+
+/** Nightly GTFS → KV catalog refresh (UTC). Must match wrangler.toml. */
+const STOPS_REFRESH_CRON = "0 3 * * *";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -20,10 +24,14 @@ export default {
   },
 
   async scheduled(
-    _controller: ScheduledController,
+    controller: ScheduledController,
     env: Env,
     ctx: ExecutionContext,
   ): Promise<void> {
+    if (controller.cron === STOPS_REFRESH_CRON) {
+      ctx.waitUntil(refreshStopsCatalog(env));
+      return;
+    }
     ctx.waitUntil(runAllWatches(env));
   },
 };
@@ -47,16 +55,33 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
           "DELETE /watch/{od}/{do}?od=06:00&do=09:00&webhook=https://trigger.macrodroid.com/...",
         list: "GET /watches?webhook=https://trigger.macrodroid.com/...",
         deleteById: "DELETE /watches/{id}?webhook=...",
+        stops: "GET /api/stops",
+        refreshStops: "POST /api/refresh-stops",
         example: "/watch/Tišnov/Brno?od=06:30&do=08:30&webhook=URL&minDelay=5",
       },
     });
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/stops") {
+    const { stops, meta } = await loadStopsCatalog(env);
+    return json({
+      names: stops.map((s) => s.name),
+      count: meta.count,
+      updatedAt: meta.updatedAt || null,
+      source: meta.source,
+    });
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/refresh-stops") {
+    const meta = await refreshStopsCatalog(env);
+    return json({ refreshed: true, ...meta });
   }
 
   if (parts[0] === "watch" && parts.length >= 3) {
     const watch = parseWatchFromRequest(parts[1], parts[2], url);
 
     if (request.method === "GET") {
-      const snapshot = await buildSnapshot(watch);
+      const snapshot = await buildSnapshot(watch, env);
       if (watch.webhook && url.searchParams.get("push") === "1") {
         const result = await sendWebhook(watch.webhook, snapshot);
         return json({ ...snapshot, pushed: result });
@@ -85,7 +110,7 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
       };
       await env.WATCHES.put(stored.id, JSON.stringify(stored));
       await indexWatch(env, stored.id);
-      const snapshot = await buildSnapshot(watch);
+      const snapshot = await buildSnapshot(watch, env);
       return json({ registered: true, id: stored.id, snapshot }, 201);
     }
 
@@ -156,11 +181,15 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
 
 async function buildSnapshot(
   watch: ReturnType<typeof parseWatchFromRequest>,
+  env: Env,
   observations: Record<string, number> = {},
   cache?: EvalCache,
 ): Promise<WatchSnapshot & { source: string; observations: Record<string, number> }> {
+  const stops =
+    cache?.stops ?? (await loadStopsCatalog(env)).stops;
+  if (cache && !cache.stops) cache.stops = stops;
   const { departures, alerts, source, observations: nextObs } =
-    await evaluateWatch(watch, new Date(), observations, cache);
+    await evaluateWatch(watch, new Date(), observations, cache, stops);
   return {
     watch,
     checkedAt: new Date().toISOString(),
@@ -174,7 +203,8 @@ async function buildSnapshot(
 
 async function runAllWatches(env: Env) {
   const ids = await listWatchIds(env);
-  const cache = createEvalCache();
+  const { stops } = await loadStopsCatalog(env);
+  const cache = createEvalCache(stops);
   const now = new Date();
   const results = [];
   let checked = 0;
@@ -196,7 +226,7 @@ async function runAllWatches(env: Env) {
 
     checked += 1;
     const previousObs = stored.observations ?? {};
-    const snapshot = await buildSnapshot(stored, previousObs, cache);
+    const snapshot = await buildSnapshot(stored, env, previousObs, cache);
     const fp = fingerprint(
       snapshot.departures,
       snapshot.alerts,

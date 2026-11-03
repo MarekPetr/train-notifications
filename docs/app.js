@@ -35,9 +35,14 @@ function setValue(id, val) {
 
 async function loadStops() {
   try {
-    const res = await fetch("stops.json");
+    let res = await fetch(`${workerBase()}/api/stops`);
+    if (!res.ok) {
+      res = await fetch("stops.json");
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const names = await res.json();
+    const data = await res.json();
+    const names = Array.isArray(data) ? data : data.names;
+    if (!Array.isArray(names)) throw new Error("unexpected stops payload");
     const aliases = ["Brno", "Tišnov", "Královo Pole", "Hrnčířská"];
     const all = [...new Set([...aliases, ...names])].sort((a, b) =>
       a.localeCompare(b, "cs"),
@@ -50,10 +55,18 @@ async function loadStops() {
       frag.appendChild(opt);
     }
     stopsList.replaceChildren(frag);
-    stopsStatus.textContent = `Seznam zastávek: ${all.length} položek (piš a vybírej z nápovědy).`;
+    const src =
+      data && !Array.isArray(data) && data.source
+        ? ` · zdroj ${data.source}`
+        : "";
+    const updated =
+      data && !Array.isArray(data) && data.updatedAt
+        ? ` · ${new Date(data.updatedAt).toLocaleString("cs-CZ")}`
+        : "";
+    stopsStatus.textContent = `Seznam zastávek: ${all.length} položek${src}${updated} (piš a vybírej z nápovědy).`;
   } catch (error) {
     stopsStatus.textContent =
-      "Nepodařilo se načíst stops.json — zadej stanice ručně.";
+      "Nepodařilo se načíst zastávky — zadej stanice ručně.";
     console.error(error);
   }
 }

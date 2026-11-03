@@ -118,6 +118,7 @@ curl.exe --get "http://127.0.0.1:8787/watch/Tisnov/Brno" --data-urlencode "od=06
 - Odjezdy: IDS JMK board API, fallback `dpmbinfo` (stejný feed jako mapa IDS JMK)
 - Výluky: otevřená data Brna (IDS JMK výluky/odklony)
 - Zpoždění: explicitní `+N` z boardu, jinak skluz live odhadu mezi kontrolami u registrovaných watchů
+- Zastávky: denní import GTFS KORDIS do KV (`catalog:stops`); bez KV záznamu platí bundle z deploye
 
 ## Webovka (Cloudflare Worker Assets)
 
@@ -129,7 +130,9 @@ jako API: `https://train-notifications.<subdomain>.workers.dev`.
 2. Stanice **Od** / **Do** vybírej z nápovědy (katalog IDS JMK).
 3. Vyplň časové okno a MacroDroid webhook → **Uložit** / **Test push**.
 
-Seznam zastávek (`docs/stops.json`) se generuje spolu s `npm run build:stops`.
+Seznam zastávek bere UI z `GET /api/stops` (katalog v KV, fallback na zapečený bundle).
+Worker ho jednou denně (03:00 UTC) přegeneruje z GTFS KORDIS; ručně: `POST /api/refresh-stops`.
+Lokální seed / fallback bundle: `npm run build:stops`.
 Krátké API usage JSON: `GET /api`.
 
 ### Privátní přístup (Cloudflare Access)

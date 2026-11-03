@@ -5,7 +5,8 @@ compatibility_flags = ["nodejs_compat"]
 
 [triggers]
 # Every 2 minutes: halves Free KV/API burn vs every minute; still fine for delays.
-crons = ["*/2 * * * *"]
+# 03:00 UTC: refresh stop catalog from KORDIS GTFS into KV.
+crons = ["*/2 * * * *", "0 3 * * *"]
 
 [[kv_namespaces]]
 binding = "WATCHES"
