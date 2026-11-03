@@ -5,6 +5,17 @@ const stopsStatus = document.getElementById("stopsStatus");
 /** @type {Set<string>} */
 let stopNames = new Set();
 
+const isLocalHost =
+  location.hostname === "127.0.0.1" ||
+  location.hostname === "localhost" ||
+  location.protocol === "file:";
+
+function workerBase() {
+  if (isLocalHost) return "http://127.0.0.1:8787";
+  const url = window.TRAIN_NOTIFICATIONS_CONFIG?.productionWorkerUrl || "";
+  return url.replace(/\/$/, "");
+}
+
 function value(id) {
   return document.getElementById(id).value.trim();
 }
@@ -14,7 +25,6 @@ async function loadStops() {
     const res = await fetch("stops.json");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const names = await res.json();
-    // Krátké aliasy, které Worker umí (cíl spoje / fuzzy match).
     const aliases = ["Brno", "Tišnov", "Královo Pole", "Hrnčířská"];
     const all = [...new Set([...aliases, ...names])].sort((a, b) =>
       a.localeCompare(b, "cs"),
@@ -48,10 +58,6 @@ function warnUnknownStops() {
   );
 }
 
-function workerBase() {
-  return value("workerUrl").replace(/\/$/, "");
-}
-
 function watchPath() {
   const from = encodeURIComponent(value("from").replace(/\s+/g, "_"));
   const to = encodeURIComponent(value("to").replace(/\s+/g, "_"));
@@ -75,8 +81,15 @@ function show(data) {
 }
 
 async function call(method, pathWithQuery) {
-  const url = `${workerBase()}${pathWithQuery}`;
-  show(`${method} ${url}\n…`);
+  const base = workerBase();
+  if (!base) {
+    show(
+      "Chybí productionWorkerUrl v config.js — doplň URL Cloudflare Workeru.",
+    );
+    return;
+  }
+  const url = `${base}${pathWithQuery}`;
+  show(`${method} ${pathWithQuery}\n…`);
   const res = await fetch(url, { method });
   const text = await res.text();
   let body;
@@ -133,6 +146,7 @@ if (saved) {
   try {
     const data = JSON.parse(saved);
     for (const [key, val] of Object.entries(data)) {
+      if (key === "workerUrl") continue;
       const el = document.getElementById(key);
       if (el && typeof val === "string") el.value = val;
     }
@@ -143,7 +157,6 @@ if (saved) {
 
 form.addEventListener("change", () => {
   const data = {
-    workerUrl: value("workerUrl"),
     from: value("from"),
     to: value("to"),
     timeFrom: value("timeFrom"),

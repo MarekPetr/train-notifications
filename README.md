@@ -115,8 +115,8 @@ curl.exe --get "http://127.0.0.1:8787/watch/Tisnov/Brno" --data-urlencode "od=06
 
 Statické nastavení je ve složce `docs/` (kvůli GitHub Pages — nabízí jen `/` nebo `/docs`):
 
-1. Lokálně: `npx serve docs` (kvůli načtení `stops.json`).
-2. Do pole **Worker URL** dej `http://127.0.0.1:8787` (nebo po deployi `https://….workers.dev`).
+1. Lokálně: `npx serve docs` (kvůli načtení `stops.json`) — API jde na `http://127.0.0.1:8787`.
+2. Na GitHub Pages je Worker URL natvrdo v `docs/config.js` (`productionWorkerUrl`), ve formuláři se nezobrazuje.
 3. Stanice **Od** / **Do** vybírej z nápovědy (katalog IDS JMK).
 4. Vyplň časové okno a MacroDroid webhook → **Registrovat** / **Test push**.
 
@@ -131,6 +131,9 @@ Seznam zastávek (`docs/stops.json`) se generuje spolu s `npm run build:stops`.
 5. UI bude na `https://<user>.github.io/<repo>/`
 
 Worker má CORS (`Access-Control-Allow-Origin: *`), takže Pages můžou volat API z prohlížeče.
+
+Až bude Worker úspěšně nasazený, v Cloudflare zjisti veřejnou URL
+(`https://train-notifications.<subdomain>.workers.dev`) a případně ji uprav v `docs/config.js`.
 
 ## Deploy Workeru
 
