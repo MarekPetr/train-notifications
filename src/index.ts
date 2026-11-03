@@ -44,6 +44,8 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
           "PUT /watch/{od}/{do}?od=06:00&do=09:00&webhook=https://trigger.macrodroid.com/...",
         unregister:
           "DELETE /watch/{od}/{do}?od=06:00&do=09:00&webhook=https://trigger.macrodroid.com/...",
+        list: "GET /watches?webhook=https://trigger.macrodroid.com/...",
+        deleteById: "DELETE /watches/{id}?webhook=...",
         example:
           "/watch/Tišnov/Brno?od=06:30&do=08:30&webhook=URL&minDelay=5",
       },
@@ -94,14 +96,53 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
     }
   }
 
+  if (parts[0] === "watches" && parts.length === 2) {
+    const id = decodeURIComponent(parts[1]);
+    const webhookGate = (url.searchParams.get("webhook") ?? "").trim();
+    if (!webhookGate) {
+      return json(
+        { error: "Pro přístup k sledování je potřeba query parametr webhook=" },
+        400,
+      );
+    }
+    if (request.method === "GET" || request.method === "DELETE") {
+      const raw = await env.WATCHES.get(id);
+      if (!raw) return json({ error: "Watch nenalezen" }, 404);
+      const stored = JSON.parse(raw) as StoredWatch;
+      if (normalizeWebhook(stored.webhook) !== normalizeWebhook(webhookGate)) {
+        return json({ error: "Watch nenalezen" }, 404);
+      }
+      if (request.method === "GET") return json(stored);
+      await env.WATCHES.delete(id);
+      await unindexWatch(env, id);
+      return json({ deleted: true, id });
+    }
+  }
+
   if (request.method === "GET" && url.pathname === "/watches") {
+    const webhookFilter = (url.searchParams.get("webhook") ?? "").trim();
+    if (!webhookFilter) {
+      return json(
+        {
+          error:
+            "Seznam je soukromý — přidej ?webhook= s MacroDroid URL, ke kterému chceš sledování.",
+        },
+        400,
+      );
+    }
     const ids = await listWatchIds(env);
-    const watches = [];
+    const watches: StoredWatch[] = [];
     for (const id of ids) {
       const raw = await env.WATCHES.get(id);
-      if (raw) watches.push(JSON.parse(raw));
+      if (!raw) continue;
+      const stored = JSON.parse(raw) as StoredWatch;
+      if (normalizeWebhook(stored.webhook) !== normalizeWebhook(webhookFilter)) {
+        continue;
+      }
+      watches.push(stored);
     }
-    return json({ watches });
+    watches.sort((a, b) => a.from.localeCompare(b.from, "cs"));
+    return json({ watches, webhook: webhookFilter });
   }
 
   if (request.method === "POST" && url.pathname === "/run") {
@@ -194,6 +235,10 @@ async function unindexWatch(env: Env, id: string): Promise<void> {
   const ids = new Set(await listWatchIds(env));
   ids.delete(id);
   await env.WATCHES.put("index:watches", JSON.stringify([...ids]));
+}
+
+function normalizeWebhook(value: string | undefined): string {
+  return (value ?? "").trim().replace(/\/+$/, "");
 }
 
 function corsHeaders(): HeadersInit {

@@ -2,8 +2,13 @@ const form = document.getElementById("form");
 const out = document.getElementById("out");
 const stopsList = document.getElementById("stops");
 const stopsStatus = document.getElementById("stopsStatus");
+const watchList = document.getElementById("watchList");
+const watchListStatus = document.getElementById("watchListStatus");
 /** @type {Set<string>} */
 let stopNames = new Set();
+/** @type {Array<Record<string, unknown>>} */
+let cachedWatches = [];
+let listTimer = 0;
 
 const isLocalHost =
   location.hostname === "127.0.0.1" ||
@@ -19,6 +24,11 @@ function workerBase() {
 function value(id) {
   const el = document.getElementById(id);
   return el ? el.value.trim() : "";
+}
+
+function setValue(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.value = val ?? "";
 }
 
 async function loadStops() {
@@ -59,18 +69,18 @@ function warnUnknownStops() {
   );
 }
 
-function watchPath() {
-  const from = encodeURIComponent(value("from").replace(/\s+/g, "_"));
-  const to = encodeURIComponent(value("to").replace(/\s+/g, "_"));
-  return `/watch/${from}/${to}`;
+function watchPath(from = value("from"), to = value("to")) {
+  const a = encodeURIComponent(String(from).replace(/\s+/g, "_"));
+  const b = encodeURIComponent(String(to).replace(/\s+/g, "_"));
+  return `/watch/${a}/${b}`;
 }
 
-function query(extra = {}) {
+function query(extra = {}, watch = null) {
   const params = new URLSearchParams({
-    od: value("timeFrom"),
-    do: value("timeTo"),
-    minDelay: value("minDelay") || "5",
-    webhook: value("webhook"),
+    od: watch?.timeFrom ?? value("timeFrom"),
+    do: watch?.timeTo ?? value("timeTo"),
+    minDelay: String(watch?.minDelay ?? (value("minDelay") || "5")),
+    webhook: watch?.webhook ?? value("webhook"),
     ...extra,
   });
   return params.toString();
@@ -81,17 +91,26 @@ function show(data) {
     typeof data === "string" ? data : JSON.stringify(data, null, 2);
 }
 
-async function call(method, pathWithQuery) {
+function persistForm() {
+  const data = {
+    from: value("from"),
+    to: value("to"),
+    timeFrom: value("timeFrom"),
+    timeTo: value("timeTo"),
+    webhook: value("webhook"),
+    minDelay: value("minDelay"),
+  };
+  localStorage.setItem("train-notifications-ui", JSON.stringify(data));
+}
+
+async function api(method, pathWithQuery) {
   const base = workerBase();
   if (!base) {
-    show(
+    throw new Error(
       "Chybí productionWorkerUrl v config.js — doplň URL Cloudflare Workeru.",
     );
-    return;
   }
-  const url = `${base}${pathWithQuery}`;
-  show(`${method} ${pathWithQuery}\n…`);
-  const res = await fetch(url, { method });
+  const res = await fetch(`${base}${pathWithQuery}`, { method });
   const text = await res.text();
   let body;
   try {
@@ -100,24 +119,208 @@ async function call(method, pathWithQuery) {
     body = text;
   }
   if (!res.ok) {
-    show({ error: true, status: res.status, body });
+    const err = new Error(
+      typeof body === "object" && body?.error
+        ? String(body.error)
+        : `HTTP ${res.status}`,
+    );
+    err.status = res.status;
+    err.body = body;
+    throw err;
+  }
+  return body;
+}
+
+async function call(method, pathWithQuery) {
+  show(`${method} ${pathWithQuery}\n…`);
+  try {
+    const body = await api(method, pathWithQuery);
+    show(body);
+    return body;
+  } catch (error) {
+    show({
+      error: true,
+      status: error.status,
+      body: error.body ?? String(error.message || error),
+    });
+    throw error;
+  }
+}
+
+function fillForm(watch) {
+  setValue("from", watch.from);
+  setValue("to", watch.to);
+  setValue("timeFrom", watch.timeFrom);
+  setValue("timeTo", watch.timeTo);
+  setValue("minDelay", String(watch.minDelay ?? 5));
+  if (watch.webhook) setValue("webhook", watch.webhook);
+  setValue("editingId", watch.id || "");
+  persistForm();
+  renderWatchList();
+}
+
+function clearEditing() {
+  setValue("editingId", "");
+  renderWatchList();
+}
+
+function renderWatchList() {
+  const editingId = value("editingId");
+  watchList.replaceChildren();
+
+  if (!value("webhook")) {
+    watchListStatus.textContent =
+      "Vyplň webhook URL — seznam se načte automaticky.";
     return;
   }
-  show(body);
+
+  if (!cachedWatches.length) {
+    watchListStatus.textContent = "Pro tento webhook zatím žádné sledování.";
+    return;
+  }
+
+  watchListStatus.textContent = `${cachedWatches.length} sledování pro tento webhook.`;
+
+  for (const watch of cachedWatches) {
+    const li = document.createElement("li");
+    li.className = "watch-item";
+    if (watch.id === editingId) li.classList.add("is-editing");
+
+    const main = document.createElement("div");
+    main.className = "watch-item-main";
+
+    const route = document.createElement("div");
+    route.className = "watch-item-route";
+    route.textContent = `${watch.from} → ${watch.to}`;
+
+    const meta = document.createElement("div");
+    meta.className = "watch-item-meta";
+    meta.textContent = `${watch.timeFrom}–${watch.timeTo} · min. zpoždění ${watch.minDelay ?? 5} min`;
+
+    main.append(route, meta);
+
+    const actions = document.createElement("div");
+    actions.className = "watch-item-actions";
+
+    const btnEdit = document.createElement("button");
+    btnEdit.type = "button";
+    btnEdit.textContent = "Upravit";
+    btnEdit.addEventListener("click", () => fillForm(watch));
+
+    const btnStatus = document.createElement("button");
+    btnStatus.type = "button";
+    btnStatus.textContent = "Stav";
+    btnStatus.addEventListener("click", () => {
+      call("GET", `${watchPath(watch.from, watch.to)}?${query({}, watch)}`).catch(
+        () => {},
+      );
+    });
+
+    const btnTest = document.createElement("button");
+    btnTest.type = "button";
+    btnTest.textContent = "Test";
+    btnTest.addEventListener("click", () => {
+      call(
+        "GET",
+        `${watchPath(watch.from, watch.to)}?${query({ push: "1" }, watch)}`,
+      ).catch(() => {});
+    });
+
+    const btnDel = document.createElement("button");
+    btnDel.type = "button";
+    btnDel.className = "danger";
+    btnDel.textContent = "Smazat";
+    btnDel.addEventListener("click", () => deleteWatch(watch));
+
+    actions.append(btnEdit, btnStatus, btnTest, btnDel);
+    li.append(main, actions);
+    watchList.appendChild(li);
+  }
+}
+
+async function refreshWatchList() {
+  const webhook = value("webhook");
+  if (!webhook) {
+    cachedWatches = [];
+    renderWatchList();
+    return;
+  }
+  if (!workerBase()) {
+    watchListStatus.textContent =
+      "Chybí productionWorkerUrl v config.js — seznam nejde načíst.";
+    return;
+  }
+
+  watchListStatus.textContent = "Načítám seznam…";
+  try {
+    const data = await api(
+      "GET",
+      `/watches?${new URLSearchParams({ webhook }).toString()}`,
+    );
+    cachedWatches = Array.isArray(data.watches) ? data.watches : [];
+    renderWatchList();
+  } catch (error) {
+    cachedWatches = [];
+    watchListStatus.textContent = `Seznam se nepodařilo načíst: ${error.message || error}`;
+  }
+}
+
+function scheduleListRefresh() {
+  window.clearTimeout(listTimer);
+  listTimer = window.setTimeout(() => {
+    refreshWatchList().catch(() => {});
+  }, 350);
+}
+
+async function deleteWatch(watch) {
+  if (!confirm(`Smazat sledování\n${watch.from} → ${watch.to}\n${watch.timeFrom}–${watch.timeTo}?`)) {
+    return;
+  }
+  try {
+    const webhook = watch.webhook || value("webhook");
+    const body = await call(
+      "DELETE",
+      `/watches/${encodeURIComponent(watch.id)}?${new URLSearchParams({ webhook }).toString()}`,
+    );
+    if (value("editingId") === watch.id) clearEditing();
+    show(body);
+    await refreshWatchList();
+  } catch {
+    /* already shown */
+  }
 }
 
 document.getElementById("btnStatus").addEventListener("click", () => {
   if (!warnUnknownStops()) return;
-  call("GET", `${watchPath()}?${query()}`).catch((e) => show(String(e)));
+  call("GET", `${watchPath()}?${query()}`).catch(() => {});
 });
 
-document.getElementById("btnRegister").addEventListener("click", () => {
+document.getElementById("btnRegister").addEventListener("click", async () => {
   if (!value("webhook")) {
     show("Vyplň MacroDroid webhook URL.");
     return;
   }
   if (!warnUnknownStops()) return;
-  call("POST", `${watchPath()}?${query()}`).catch((e) => show(String(e)));
+  const previousId = value("editingId");
+  try {
+    const body = await call("POST", `${watchPath()}?${query()}`);
+    const newId = body?.id;
+    if (previousId && newId && previousId !== newId) {
+      try {
+        const webhook = value("webhook");
+        await api(
+          "DELETE",
+          `/watches/${encodeURIComponent(previousId)}?${new URLSearchParams({ webhook }).toString()}`,
+        );
+      } catch {
+        /* starý záznam možná už neexistuje */
+      }
+    }
+    setValue("editingId", newId || "");
+    await refreshWatchList();
+  } catch {
+    /* already shown */
+  }
 });
 
 document.getElementById("btnTest").addEventListener("click", () => {
@@ -126,18 +329,34 @@ document.getElementById("btnTest").addEventListener("click", () => {
     return;
   }
   if (!warnUnknownStops()) return;
-  call("GET", `${watchPath()}?${query({ push: "1" })}`).catch((e) =>
-    show(String(e)),
-  );
+  call("GET", `${watchPath()}?${query({ push: "1" })}`).catch(() => {});
 });
 
-document.getElementById("btnDelete").addEventListener("click", () => {
+document.getElementById("btnDelete").addEventListener("click", async () => {
+  const editingId = value("editingId");
+  if (editingId) {
+    const watch = cachedWatches.find((w) => w.id === editingId) || {
+      id: editingId,
+      from: value("from"),
+      to: value("to"),
+      timeFrom: value("timeFrom"),
+      timeTo: value("timeTo"),
+    };
+    await deleteWatch(watch);
+    return;
+  }
   if (!warnUnknownStops()) return;
-  call("DELETE", `${watchPath()}?${query()}`).catch((e) => show(String(e)));
+  try {
+    await call("DELETE", `${watchPath()}?${query()}`);
+    clearEditing();
+    await refreshWatchList();
+  } catch {
+    /* already shown */
+  }
 });
 
-document.getElementById("btnList").addEventListener("click", () => {
-  call("GET", "/watches").catch((e) => show(String(e)));
+document.getElementById("btnRefreshList").addEventListener("click", () => {
+  refreshWatchList().catch(() => {});
 });
 
 form.addEventListener("submit", (event) => event.preventDefault());
@@ -148,8 +367,7 @@ if (saved) {
     const data = JSON.parse(saved);
     for (const [key, val] of Object.entries(data)) {
       if (key === "workerUrl") continue;
-      const el = document.getElementById(key);
-      if (el && typeof val === "string") el.value = val;
+      if (typeof val === "string") setValue(key, val);
     }
   } catch {
     /* ignore */
@@ -157,15 +375,14 @@ if (saved) {
 }
 
 form.addEventListener("change", () => {
-  const data = {
-    from: value("from"),
-    to: value("to"),
-    timeFrom: value("timeFrom"),
-    timeTo: value("timeTo"),
-    webhook: value("webhook"),
-    minDelay: value("minDelay"),
-  };
-  localStorage.setItem("train-notifications-ui", JSON.stringify(data));
+  persistForm();
+  if (document.activeElement?.id === "webhook") scheduleListRefresh();
+});
+
+document.getElementById("webhook").addEventListener("input", () => {
+  persistForm();
+  scheduleListRefresh();
 });
 
 loadStops();
+refreshWatchList().catch(() => {});

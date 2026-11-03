@@ -118,6 +118,70 @@ button.danger {
   border-color: #e0b4b4;
 }
 
+.watch-panel {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.watch-panel-head h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.1rem;
+  letter-spacing: -0.01em;
+}
+
+.watch-panel-head .hint {
+  margin: 0 0 0.85rem;
+}
+
+.watch-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.watch-item {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  background: #fff;
+}
+
+.watch-item.is-editing {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.watch-item-main {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.watch-item-route {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.watch-item-meta {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.watch-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.watch-item-actions button {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.88rem;
+}
+
 #out {
   margin: 1.25rem 0 0;
   padding: 0.9rem 1rem;

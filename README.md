@@ -19,6 +19,12 @@ PUT /watch/Tišnov/Brno?od=06:30&do=08:30&webhook=https://trigger.macrodroid.com
 
 # zrušit
 DELETE /watch/Tišnov/Brno?od=06:30&do=08:30&webhook=https://trigger.macrodroid.com/...
+
+# seznam sledování pro webhook (nebo všechna bez filtru)
+GET /watches?webhook=https://trigger.macrodroid.com/...
+
+# zrušit podle id ze seznamu
+DELETE /watches/{id}
 ```
 
 | Část | Význam |
@@ -27,6 +33,8 @@ DELETE /watch/Tišnov/Brno?od=06:30&do=08:30&webhook=https://trigger.macrodroid.
 | `od`, `do` | Časové okno odjezdů (`HH:MM`) |
 | `webhook` | MacroDroid incoming webhook |
 | `minDelay` | Práh zpoždění v minutách (default `5`) |
+| `GET /watches?webhook=` | Seznam jen pro danou MacroDroid URL (bez `webhook` nic nevrací) |
+| `DELETE /watches/{id}?webhook=` | Smazání konkrétního sledování (stejná URL musí sedět) |
 
 Mezery ve jménech zastávek: `%20` nebo `_`.
 

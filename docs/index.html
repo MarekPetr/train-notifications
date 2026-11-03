@@ -71,14 +71,24 @@
           <input id="minDelay" name="minDelay" type="number" min="0" value="5" required />
         </label>
 
+        <input type="hidden" id="editingId" value="" />
+
         <div class="actions">
           <button type="button" id="btnStatus">Stav</button>
-          <button type="button" id="btnRegister" class="primary">Registrovat</button>
+          <button type="button" id="btnRegister" class="primary">Uložit</button>
           <button type="button" id="btnTest">Test push</button>
           <button type="button" id="btnDelete" class="danger">Zrušit</button>
-          <button type="button" id="btnList">Seznam</button>
+          <button type="button" id="btnRefreshList">Obnovit seznam</button>
         </div>
       </form>
+
+      <section class="watch-panel" aria-labelledby="watchListHeading">
+        <div class="watch-panel-head">
+          <h2 id="watchListHeading">Sledování pro tento webhook</h2>
+          <p id="watchListStatus" class="hint">Vyplň webhook URL — seznam se načte automaticky.</p>
+        </div>
+        <ul id="watchList" class="watch-list"></ul>
+      </section>
 
       <p class="hint">
         V MacroDroidu ulož parametry webhooku do slovníku <code>params</code> a v
