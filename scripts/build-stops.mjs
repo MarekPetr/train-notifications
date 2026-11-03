@@ -82,8 +82,8 @@ const stops = [...byName.values()].sort((a, b) => a.name.localeCompare(b.name, "
 fs.writeFileSync(path.join(outDir, "stops.json"), JSON.stringify(stops));
 console.log(`Wrote ${stops.length} stops to src/data/stops.json`);
 
-const webDir = path.join(root, "web");
-fs.mkdirSync(webDir, { recursive: true });
+const docsDir = path.join(root, "docs");
+fs.mkdirSync(docsDir, { recursive: true });
 const names = stops.map((s) => s.name);
-fs.writeFileSync(path.join(webDir, "stops.json"), JSON.stringify(names));
-console.log(`Wrote ${names.length} stop names to web/stops.json`);
+fs.writeFileSync(path.join(docsDir, "stops.json"), JSON.stringify(names));
+console.log(`Wrote ${names.length} stop names to docs/stops.json`);
