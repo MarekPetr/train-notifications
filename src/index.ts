@@ -27,6 +27,10 @@ export default {
 };
 
 async function handleFetch(request: Request, env: Env): Promise<Response> {
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: corsHeaders() });
+  }
+
   const url = new URL(request.url);
   const parts = url.pathname.split("/").filter(Boolean);
 
@@ -192,12 +196,21 @@ async function unindexWatch(env: Env, id: string): Promise<void> {
   await env.WATCHES.put("index:watches", JSON.stringify([...ids]));
 }
 
+function corsHeaders(): HeadersInit {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Max-Age": "86400",
+  };
+}
+
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data, null, 2), {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      "Access-Control-Allow-Origin": "*",
+      ...corsHeaders(),
     },
   });
 }

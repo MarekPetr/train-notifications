@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="cs">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>train-notifications</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main>
+      <h1>train-notifications</h1>
+      <p class="lead">
+        Nastavení sledování zpoždění IDS JMK a push do MacroDroidu.
+      </p>
+
+      <form id="form">
+        <label>
+          Worker URL
+          <input
+            id="workerUrl"
+            name="workerUrl"
+            type="url"
+            required
+            placeholder="http://127.0.0.1:8787"
+            value="http://127.0.0.1:8787"
+          />
+        </label>
+
+        <div class="row">
+          <label>
+            Od
+            <input
+              id="from"
+              name="from"
+              list="stops"
+              required
+              autocomplete="off"
+              placeholder="Začni psát název zastávky"
+              value="Tišnov, železniční stanice"
+            />
+          </label>
+          <label>
+            Do
+            <input
+              id="to"
+              name="to"
+              list="stops"
+              required
+              autocomplete="off"
+              placeholder="Začni psát název zastávky"
+              value="Brno"
+            />
+          </label>
+        </div>
+        <datalist id="stops"></datalist>
+        <p id="stopsStatus" class="hint">Načítám seznam zastávek…</p>
+
+        <div class="row">
+          <label>
+            Čas od
+            <input id="timeFrom" name="timeFrom" type="time" required value="06:30" />
+          </label>
+          <label>
+            Čas do
+            <input id="timeTo" name="timeTo" type="time" required value="08:30" />
+          </label>
+        </div>
+
+        <label>
+          MacroDroid webhook URL
+          <input
+            id="webhook"
+            name="webhook"
+            type="url"
+            required
+            placeholder="https://trigger.macrodroid.com/.../trains"
+          />
+        </label>
+
+        <label>
+          Min. zpoždění (min)
+          <input id="minDelay" name="minDelay" type="number" min="0" value="5" required />
+        </label>
+
+        <div class="actions">
+          <button type="button" id="btnStatus">Stav</button>
+          <button type="button" id="btnRegister" class="primary">Registrovat</button>
+          <button type="button" id="btnTest">Test push</button>
+          <button type="button" id="btnDelete" class="danger">Zrušit</button>
+          <button type="button" id="btnList">Seznam</button>
+        </div>
+      </form>
+
+      <p class="hint">
+        V MacroDroidu ulož parametry webhooku do slovníku <code>params</code> a v
+        oznámení použij <code>{lv=params[message]}</code>.
+      </p>
+
+      <pre id="out" aria-live="polite">Připraveno.</pre>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,143 @@
+:root {
+  color-scheme: light;
+  --bg: #f3efe6;
+  --ink: #1c1914;
+  --muted: #5c564c;
+  --card: #fffdf8;
+  --line: #d7d0c3;
+  --accent: #0f5c4c;
+  --danger: #8b2e2e;
+  --focus: #c45c26;
+  font-family: "Segoe UI", "Iosevka Aile", "IBM Plex Sans", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, #efe4cf 0, transparent 40%),
+    linear-gradient(180deg, #f7f2e8, var(--bg));
+  color: var(--ink);
+}
+
+main {
+  width: min(40rem, calc(100% - 2rem));
+  margin: 2rem auto 3rem;
+  padding: 1.5rem;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  box-shadow: 0 10px 30px rgb(28 25 20 / 6%);
+}
+
+h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.6rem;
+  letter-spacing: -0.02em;
+}
+
+.lead,
+.hint {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.hint code {
+  color: var(--ink);
+  font-size: 0.92em;
+}
+
+form {
+  display: grid;
+  gap: 0.9rem;
+  margin-top: 1.25rem;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.9rem;
+}
+
+label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+input {
+  width: 100%;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+}
+
+input:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: 0.25rem;
+}
+
+button {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 0.55rem 0.95rem;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: #b7ae9e;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+button.danger {
+  color: var(--danger);
+  border-color: #e0b4b4;
+}
+
+#out {
+  margin: 1.25rem 0 0;
+  padding: 0.9rem 1rem;
+  border-radius: 0.75rem;
+  background: #1c1914;
+  color: #f4efe6;
+  overflow: auto;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 640px) {
+  .row {
+    grid-template-columns: 1fr;
+  }
+
+  main {
+    margin-top: 1rem;
+    padding: 1.1rem;
+  }
+}
