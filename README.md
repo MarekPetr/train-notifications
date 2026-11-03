@@ -30,6 +30,26 @@ DELETE /watch/Tišnov/Brno?od=06:30&do=08:30&webhook=https://trigger.macrodroid.
 
 Mezery ve jménech zastávek: `%20` nebo `_`.
 
+## Příklad: Tišnov → Hrnčířská (vlak + tramvaj)
+
+Jeden watch = jedna noha cesty (odjezdy ze zastávky filtrované podle **cíle spoje**).
+Přestup Tišnov → Královo Pole → Hrnčířská tedy potřebuje **dva watch**:
+
+```text
+# 1) vlak — cíl spoje je typicky Brno hl.n., ne Královo Pole
+PUT /watch/Tišnov/Brno?od=06:30&do=08:30&webhook=https://trigger.macrodroid.com/.../vlak&minDelay=5
+
+# 2) tramvaj z Králova Pole na Hrnčířskou
+PUT /watch/Královo_Pole/Hrnčířská?od=06:30&do=08:30&webhook=https://trigger.macrodroid.com/.../tramvaj&minDelay=5
+```
+
+Mapování jmen:
+- `Tišnov` → Tišnov, železniční stanice
+- `Královo_Pole` / `Královo Pole` → Královo Pole, nádraží
+- `Hrnčířská` → Hrnčířská
+
+V MacroDroidu buď dvě makra (dvě webhook URL), nebo jedno makro a oba `PUT` na stejný webhook — trasu poznáš z polí `from` / `to`.
+
 ## Lokálně
 
 ```bash
