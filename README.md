@@ -70,9 +70,38 @@ curl "http://127.0.0.1:8787/cdn-cgi/local/scheduled?format=json"
 
 1. Vytvoř trigger *Webhook (URL)* a zkopíruj URL.
 2. Zaregistruj sledování přes `PUT` výše.
-3. Worker každou minutu zkontroluje spoje; při nové události pošle JSON.
+3. Worker každou minutu zkontroluje spoje; na MacroDroid pošle JSON **jen při nové události** (zpoždění / zrušení / výluka), ať endpoint nezahlcuješ.
 
-Užitečná pole: `text` / `message`, `noteworthy`, `departures`, `alerts`.
+### Oznámení
+
+Přidej akci **Oznámení** (Display Notification):
+
+| Pole | Hodnota |
+| --- | --- |
+| Titulek | `{title}` nebo napevno `Vlaky / MHD` |
+| Text | `{message}` (stejný obsah má i `{text}`) |
+
+Příklady textu z backendu:
+- `ZPOŽDĚNÍ +7 min S3 → Brno hl.n. (07:51)`
+- `ZRUŠENO S3 → Brno hl.n.`
+- `Bez zpoždění/zrušení na …` (test s `push=1`)
+
+Další JSON pole: `from`, `to`, `timeFrom`, `timeTo`, `alertText`, `noteworthy`, `departures`, `alerts`.
+
+Vlastní text (volitelně):
+
+```text
+{from} → {to}
+{message}
+```
+
+Když `{message}` zůstane prázdné, zapni u webhooku předávání JSON parametrů / akci **JSON Parse** na tělo requestu.
+
+### Test notifikace
+
+```bash
+curl "http://127.0.0.1:8787/watch/Tišnov/Brno?od=06:00&do=09:00&webhook=MACRODROID_URL&minDelay=5&push=1"
+```
 
 ## Data
 
