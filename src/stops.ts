@@ -1,7 +1,11 @@
 import bundledStops from "./data/stops.json";
 import { buildCatalogFromGtfs } from "./gtfsCatalog";
 import type { Env } from "./types";
-import { clearViaMemoryCache, saveViaBeyond } from "./via";
+import {
+  clearViaMemoryCache,
+  loadViaBeyond,
+  saveViaBeyond,
+} from "./via";
 
 export interface StopRef {
   name: string;
@@ -19,10 +23,13 @@ export interface StopsCatalogMeta {
 
 const CATALOG_KEY = "catalog:stops";
 const META_KEY = "catalog:stops:meta";
+const DEPLOY_KEY = "catalog:deployId";
 
 /** Isolate-lifetime cache so cron/API reuse one KV read. */
 let memoryCatalog: StopRef[] | null = null;
 let memoryMeta: StopsCatalogMeta | null = null;
+let readyDeployId: string | null = null;
+let ensureInflight: Promise<StopsCatalogMeta | null> | null = null;
 
 export async function loadStopsCatalog(
   env: Env,
@@ -111,16 +118,62 @@ export async function refreshStopsCatalog(env: Env): Promise<StopsCatalogMeta> {
 
   await env.WATCHES.put(CATALOG_KEY, JSON.stringify(stops));
   await env.WATCHES.put(META_KEY, JSON.stringify(meta));
+  await env.WATCHES.put(DEPLOY_KEY, currentDeployId(env));
 
   memoryCatalog = stops;
   memoryMeta = { ...meta, source: "kv" };
+  readyDeployId = currentDeployId(env);
   return meta;
+}
+
+/**
+ * After each deploy (new DEPLOY_ID), rebuild stops + via into KV once.
+ * Also runs when catalog is missing/empty. Deduped per isolate.
+ */
+export async function ensureCatalogForDeploy(
+  env: Env,
+): Promise<{ refreshed: boolean; meta: StopsCatalogMeta | null }> {
+  const deployId = currentDeployId(env);
+  if (readyDeployId === deployId) {
+    return { refreshed: false, meta: memoryMeta };
+  }
+
+  if (!ensureInflight) {
+    ensureInflight = (async () => {
+      const storedDeploy = await env.WATCHES.get(DEPLOY_KEY);
+      const { stops, meta } = await loadStopsCatalog(env);
+      const { meta: viaMeta } = await loadViaBeyond(env);
+      const needsRefresh =
+        storedDeploy !== deployId ||
+        meta.source === "bundle" ||
+        stops.length < 100 ||
+        viaMeta.source === "empty" ||
+        viaMeta.pairCount === 0;
+
+      if (!needsRefresh) {
+        readyDeployId = deployId;
+        return null;
+      }
+
+      return refreshStopsCatalog(env);
+    })().finally(() => {
+      ensureInflight = null;
+    });
+  }
+
+  const meta = await ensureInflight;
+  return { refreshed: meta != null, meta: meta ?? memoryMeta };
+}
+
+function currentDeployId(env: Env): string {
+  return (env.DEPLOY_ID || "local").trim() || "local";
 }
 
 /** Clear isolate cache (tests / after manual KV wipe). */
 export function clearStopsMemoryCache(): void {
   memoryCatalog = null;
   memoryMeta = null;
+  readyDeployId = null;
   clearViaMemoryCache();
 }
 

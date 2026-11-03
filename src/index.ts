@@ -6,7 +6,11 @@ import {
   type EvalCache,
 } from "./idsjmk";
 import { sendWebhook } from "./notify";
-import { loadStopsCatalog, refreshStopsCatalog } from "./stops";
+import {
+  ensureCatalogForDeploy,
+  loadStopsCatalog,
+  refreshStopsCatalog,
+} from "./stops";
 import type {
   Env,
   StoredWatch,
@@ -20,9 +24,13 @@ import { isWatchDue, parseWatchFromRequest, watchId } from "./watch";
 const STOPS_REFRESH_CRON = "0 3 * * *";
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(
+    request: Request,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<Response> {
     try {
-      return await handleFetch(request, env);
+      return await handleFetch(request, env, ctx);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return json({ error: message }, 400);
@@ -38,17 +46,39 @@ export default {
       ctx.waitUntil(refreshStopsCatalog(env));
       return;
     }
-    ctx.waitUntil(runAllWatches(env));
+    ctx.waitUntil(
+      (async () => {
+        await ensureCatalogForDeploy(env);
+        await runAllWatches(env);
+      })(),
+    );
   },
 };
 
-async function handleFetch(request: Request, env: Env): Promise<Response> {
+async function handleFetch(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+): Promise<Response> {
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders() });
   }
 
   const url = new URL(request.url);
   const parts = url.pathname.split("/").filter(Boolean);
+  const needsCatalog =
+    url.pathname === "/api" ||
+    url.pathname.startsWith("/api/") ||
+    url.pathname === "/run" ||
+    parts[0] === "watch" ||
+    parts[0] === "watches";
+
+  if (needsCatalog) {
+    await ensureCatalogForDeploy(env);
+  } else {
+    // Static UI: rebuild in background after deploy so the next cron/API is ready.
+    ctx.waitUntil(ensureCatalogForDeploy(env));
+  }
 
   if (request.method === "GET" && url.pathname === "/api") {
     return json({

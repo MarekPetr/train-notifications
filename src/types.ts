@@ -2,6 +2,8 @@ export interface Env {
   WATCHES: KVNamespace;
   ASSETS: Fetcher;
   TZ: string;
+  /** Set on each `npm run deploy` — triggers one-shot GTFS catalog rebuild. */
+  DEPLOY_ID: string;
 }
 
 export interface WatchConfig {
