@@ -17,7 +17,8 @@ function workerBase() {
 }
 
 function value(id) {
-  return document.getElementById(id).value.trim();
+  const el = document.getElementById(id);
+  return el ? el.value.trim() : "";
 }
 
 async function loadStops() {
