@@ -24,7 +24,6 @@
               required
               autocomplete="off"
               placeholder="Začni psát název zastávky"
-              value="Tišnov, železniční stanice"
             />
           </label>
           <label>
@@ -35,7 +34,6 @@
               required
               autocomplete="off"
               placeholder="Začni psát název zastávky"
-              value="Brno"
             />
           </label>
         </div>
@@ -44,11 +42,11 @@
         <div class="row">
           <label>
             Čas od
-            <input id="timeFrom" name="timeFrom" type="time" required value="06:30" />
+            <input id="timeFrom" name="timeFrom" type="time" required />
           </label>
           <label>
             Čas do
-            <input id="timeTo" name="timeTo" type="time" required value="08:30" />
+            <input id="timeTo" name="timeTo" type="time" required />
           </label>
         </div>
 
@@ -79,6 +77,7 @@
         <div class="actions">
           <button type="button" id="btnStatus">Stav</button>
           <button type="button" id="btnRegister" class="primary">Uložit</button>
+          <button type="button" id="btnCancel" hidden>Zrušit</button>
           <button type="button" id="btnTest">Test push</button>
           <button type="button" id="btnDelete" class="danger">Smazat</button>
           <button type="button" id="btnRefreshList">Obnovit seznam</button>

@@ -111,13 +111,10 @@ function show(data) {
 }
 
 function persistForm() {
+  // Jen webhook — trasa/časy patří buď nové položce, nebo aktivní editaci.
+  // Po refreshi nemá formulář vypadat jako editace bez označeného záznamu.
   const data = {
-    from: value("from"),
-    to: value("to"),
-    timeFrom: value("timeFrom"),
-    timeTo: value("timeTo"),
     webhook: value("webhook"),
-    minDelay: value("minDelay"),
   };
   localStorage.setItem("train-notifications-ui", JSON.stringify(data));
 }
@@ -161,6 +158,12 @@ async function call(method, pathWithQuery) {
   }
 }
 
+function updateEditingUi() {
+  const editing = Boolean(value("editingId"));
+  const btnCancel = document.getElementById("btnCancel");
+  if (btnCancel) btnCancel.hidden = !editing;
+}
+
 function fillForm(watch) {
   setValue("from", watch.from);
   setValue("to", watch.to);
@@ -173,11 +176,23 @@ function fillForm(watch) {
   if (watch.webhook) setValue("webhook", watch.webhook);
   setValue("editingId", watch.id || "");
   persistForm();
+  updateEditingUi();
   renderWatchList();
+}
+
+function resetFormFields() {
+  setValue("from", "");
+  setValue("to", "");
+  setValue("timeFrom", "");
+  setValue("timeTo", "");
+  setValue("minDelay", "");
 }
 
 function clearEditing() {
   setValue("editingId", "");
+  resetFormFields();
+  persistForm();
+  updateEditingUi();
   renderWatchList();
 }
 
@@ -331,10 +346,16 @@ document.getElementById("btnRegister").addEventListener("click", async () => {
       }
     }
     setValue("editingId", newId || "");
+    updateEditingUi();
     await refreshWatchList();
   } catch {
     /* already shown */
   }
+});
+
+document.getElementById("btnCancel").addEventListener("click", () => {
+  clearEditing();
+  show("Editace zrušena.");
 });
 
 document.getElementById("btnTest").addEventListener("click", () => {
@@ -379,14 +400,12 @@ const saved = localStorage.getItem("train-notifications-ui");
 if (saved) {
   try {
     const data = JSON.parse(saved);
-    for (const [key, val] of Object.entries(data)) {
-      if (key === "workerUrl") continue;
-      if (typeof val === "string") setValue(key, val);
-    }
+    if (typeof data.webhook === "string") setValue("webhook", data.webhook);
   } catch {
     /* ignore */
   }
 }
+updateEditingUi();
 
 form.addEventListener("change", () => {
   persistForm();
