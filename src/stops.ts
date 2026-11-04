@@ -1,5 +1,11 @@
 import bundledStops from "./data/stops.json";
 import { buildCatalogFromGtfs } from "./gtfsCatalog";
+import {
+  isBrnoMainStationName,
+  looksLikeRailStation,
+  normalize,
+  placeCore,
+} from "./names";
 import type { Env } from "./types";
 import {
   clearViaMemoryCache,
@@ -76,22 +82,37 @@ export function resolveStop(query: string, stops: StopRef[]): StopRef | null {
   const q = normalize(query);
   if (!q) return null;
 
+  // Exact catalog name always wins (autocomplete picks).
+  for (const stop of stops) {
+    if (normalize(stop.name) === q) return stop;
+  }
+
+  // IDS names Brno main station "Hlavní nádraží"; boards/users say "Brno" / "Brno hl.n.".
+  if (isBrnoMainStationName(query)) {
+    const hl = stops.find((s) => normalize(s.name) === "hlavni nadrazi");
+    if (hl) return hl;
+  }
+
+  const qCore = placeCore(q);
   let best: { stop: StopRef; score: number } | null = null;
   for (const stop of stops) {
     const name = normalize(stop.name);
+    const sCore = placeCore(name);
     let score = 0;
-    if (name === q) score = 1000;
+
+    if (qCore && sCore && qCore === sCore) score = 920;
+    else if (qCore && name.startsWith(qCore + " ")) score = 860;
+    else if (qCore && sCore && (sCore.startsWith(qCore + " ") || qCore.startsWith(sCore + " ")))
+      score = 820;
     else if (name.startsWith(q + " ")) score = 800;
     else if (name.startsWith(q)) score = 700;
+    else if (qCore && name.includes(qCore) && qCore.length >= 4) score = 560;
     else if (name.includes(q)) score = 500;
     else continue;
 
-    if (
-      q.split(" ").length <= 2 &&
-      /(zeleznicni|zel st|nadrazi|hl n)/.test(name)
-    ) {
-      score += 120;
-    }
+    if (looksLikeRailStation(stop.name)) score += 150;
+    // Prefer shorter names when place cores already match (station over suburb).
+    if (qCore && sCore && qCore === sCore) score -= Math.min(sCore.length, 20);
     score -= Math.min(name.length, 60);
 
     if (!best || score > best.score) best = { stop, score };
@@ -175,13 +196,4 @@ export function clearStopsMemoryCache(): void {
   memoryMeta = null;
   readyDeployId = null;
   clearViaMemoryCache();
-}
-
-function normalize(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
 }

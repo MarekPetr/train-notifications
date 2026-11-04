@@ -1,3 +1,4 @@
+import { destinationsMatch, normalize } from "./names";
 import { resolveStop, type StopRef } from "./stops";
 import type { ViaBeyondIndex } from "./via";
 import { isWithinWindow } from "./watch";
@@ -502,13 +503,7 @@ function destinationServesWatch(
   stops: StopRef[],
   viaBeyond: ViaBeyondIndex,
 ): boolean {
-  if (namesLooselyMatch(boardDestination, wantedTo)) return true;
-  if (
-    normalize(wantedTo).includes("brno") &&
-    /(brno|brna|hlavn)/.test(normalize(boardDestination))
-  ) {
-    return true;
-  }
+  if (destinationsMatch(boardDestination, wantedTo)) return true;
 
   const fromStop = resolveStop(from, stops);
   const toStop = resolveStop(wantedTo, stops);
@@ -526,25 +521,9 @@ function destinationServesWatch(
   }
   for (const termId of beyond) {
     const term = stopsById.get(termId);
-    if (term && namesLooselyMatch(boardDestination, term.name)) return true;
+    if (term && destinationsMatch(boardDestination, term.name)) return true;
   }
   return false;
-}
-
-function namesLooselyMatch(a: string, b: string): boolean {
-  const left = normalize(a);
-  const right = normalize(b);
-  if (!left || !right) return false;
-  return left.includes(right) || right.includes(left);
-}
-
-function normalize(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
 }
 
 function formatHm(date: Date): string {
