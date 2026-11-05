@@ -1,5 +1,4 @@
-import type { StopRef } from "./stops";
-import type { ViaBeyondIndex } from "./via";
+import type { StopRef, ViaBeyondIndex } from "./types";
 
 const GTFS_URL = "https://kordis-jmk.cz/gtfs/gtfs.zip";
 

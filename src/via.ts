@@ -1,16 +1,10 @@
-import type { Env } from "./types";
+import {
+  getViaBeyond as storageGetVia,
+  putViaBeyond as storagePutVia,
+} from "./storage";
+import type { Env, ViaBeyondIndex, ViaCatalogMeta } from "./types";
 
-/** fromStopId|toStopId → terminus stopIds that continue past `to`. */
-export type ViaBeyondIndex = Record<string, number[]>;
-
-export interface ViaCatalogMeta {
-  updatedAt: string;
-  pairCount: number;
-  source: "kv" | "empty";
-}
-
-const VIA_KEY = "catalog:via-beyond";
-const VIA_META_KEY = "catalog:via-beyond:meta";
+export type { ViaBeyondIndex, ViaCatalogMeta };
 
 let memoryVia: ViaBeyondIndex | null = null;
 let memoryMeta: ViaCatalogMeta | null = null;
@@ -22,27 +16,11 @@ export async function loadViaBeyond(
     return { via: memoryVia, meta: memoryMeta };
   }
 
-  const raw = await env.WATCHES.get(VIA_KEY);
-  if (raw) {
-    try {
-      const via = JSON.parse(raw) as ViaBeyondIndex;
-      if (via && typeof via === "object") {
-        const metaRaw = await env.WATCHES.get(VIA_META_KEY);
-        const meta = metaRaw
-          ? (JSON.parse(metaRaw) as ViaCatalogMeta)
-          : {
-              updatedAt: "",
-              pairCount: Object.keys(via).length,
-              source: "kv" as const,
-            };
-        meta.source = "kv";
-        memoryVia = via;
-        memoryMeta = meta;
-        return { via, meta };
-      }
-    } catch {
-      // fall through
-    }
+  const stored = await storageGetVia(env);
+  if (stored) {
+    memoryVia = stored.via;
+    memoryMeta = stored.meta;
+    return stored;
   }
 
   const empty: ViaBeyondIndex = {};
@@ -66,8 +44,7 @@ export async function saveViaBeyond(
     pairCount: Object.keys(via).length,
     source: "kv",
   };
-  await env.WATCHES.put(VIA_KEY, JSON.stringify(via));
-  await env.WATCHES.put(VIA_META_KEY, JSON.stringify(meta));
+  await storagePutVia(env, via, meta);
   memoryVia = via;
   memoryMeta = meta;
   return meta;

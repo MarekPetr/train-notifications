@@ -11,6 +11,13 @@ import {
   loadStopsCatalog,
   refreshStopsCatalog,
 } from "./stops";
+import {
+  deleteWatch,
+  getWatch,
+  listAllWatches,
+  putWatch,
+  storageBackend,
+} from "./storage";
 import type {
   Env,
   StoredWatch,
@@ -20,7 +27,9 @@ import type {
 import { loadViaBeyond } from "./via";
 import { isWatchDue, parseWatchFromRequest, watchId } from "./watch";
 
-/** Nightly GTFS → KV catalog refresh (UTC). Must match wrangler.toml. */
+export { AppStore } from "./store";
+
+/** Nightly GTFS → storage catalog refresh (UTC). Must match wrangler.toml. */
 const STOPS_REFRESH_CRON = "0 3 * * *";
 
 export default {
@@ -83,6 +92,7 @@ async function handleFetch(
   if (request.method === "GET" && url.pathname === "/api") {
     return json({
       service: "train-notifications",
+      storage: storageBackend(env),
       usage: {
         status: "GET /watch/{od}/{do}?od=06:00&do=09:00",
         register:
@@ -105,12 +115,13 @@ async function handleFetch(
       count: meta.count,
       updatedAt: meta.updatedAt || null,
       source: meta.source,
+      storage: storageBackend(env),
     });
   }
 
   if (request.method === "POST" && url.pathname === "/api/refresh-stops") {
     const meta = await refreshStopsCatalog(env);
-    return json({ refreshed: true, ...meta });
+    return json({ refreshed: true, storage: storageBackend(env), ...meta });
   }
 
   if (parts[0] === "watch" && parts.length >= 3) {
@@ -136,10 +147,7 @@ async function handleFetch(
         );
       }
       const id = watchId(watch);
-      const existingRaw = await env.WATCHES.get(id);
-      const existing = existingRaw
-        ? (JSON.parse(existingRaw) as StoredWatch)
-        : null;
+      const existing = await getWatch(env, id);
       const stored: StoredWatch = {
         ...watch,
         id,
@@ -147,16 +155,14 @@ async function handleFetch(
         lastFingerprint: existing?.lastFingerprint,
         observations: existing?.observations,
       };
-      await env.WATCHES.put(stored.id, JSON.stringify(stored));
-      await indexWatch(env, stored.id);
+      await putWatch(env, stored);
       const snapshot = await buildSnapshot(watch, env);
       return json({ registered: true, id: stored.id, snapshot }, 201);
     }
 
     if (request.method === "DELETE") {
       const id = watchId(watch);
-      await env.WATCHES.delete(id);
-      await unindexWatch(env, id);
+      await deleteWatch(env, id);
       return json({ deleted: true, id });
     }
   }
@@ -171,15 +177,13 @@ async function handleFetch(
       );
     }
     if (request.method === "GET" || request.method === "DELETE") {
-      const raw = await env.WATCHES.get(id);
-      if (!raw) return json({ error: "Watch nenalezen" }, 404);
-      const stored = JSON.parse(raw) as StoredWatch;
+      const stored = await getWatch(env, id);
+      if (!stored) return json({ error: "Watch nenalezen" }, 404);
       if (normalizeWebhook(stored.webhook) !== normalizeWebhook(webhookGate)) {
         return json({ error: "Watch nenalezen" }, 404);
       }
       if (request.method === "GET") return json(stored);
-      await env.WATCHES.delete(id);
-      await unindexWatch(env, id);
+      await deleteWatch(env, id);
       return json({ deleted: true, id });
     }
   }
@@ -195,18 +199,14 @@ async function handleFetch(
         400,
       );
     }
-    const ids = await listWatchIds(env);
-    const watches: StoredWatch[] = [];
-    for (const id of ids) {
-      const raw = await env.WATCHES.get(id);
-      if (!raw) continue;
-      const stored = JSON.parse(raw) as StoredWatch;
-      if (normalizeWebhook(stored.webhook) !== normalizeWebhook(webhookFilter)) {
-        continue;
-      }
-      watches.push(stored);
-    }
-    watches.sort((a, b) => a.from.localeCompare(b.from, "cs"));
+    const all = await listAllWatches(env);
+    const watches = all
+      .filter(
+        (stored) =>
+          normalizeWebhook(stored.webhook) ===
+          normalizeWebhook(webhookFilter),
+      )
+      .sort((a, b) => a.from.localeCompare(b.from, "cs"));
     return json({ watches, webhook: webhookFilter });
   }
 
@@ -260,21 +260,16 @@ async function loadStoredObservations(
   watch: ReturnType<typeof parseWatchFromRequest>,
 ): Promise<StoredWatch["observations"]> {
   if (!watch.webhook) return {};
-  const raw = await env.WATCHES.get(watchId(watch));
-  if (!raw) return {};
-  try {
-    const stored = JSON.parse(raw) as StoredWatch;
-    if (normalizeWebhook(stored.webhook) !== normalizeWebhook(watch.webhook)) {
-      return {};
-    }
-    return stored.observations ?? {};
-  } catch {
+  const stored = await getWatch(env, watchId(watch));
+  if (!stored) return {};
+  if (normalizeWebhook(stored.webhook) !== normalizeWebhook(watch.webhook)) {
     return {};
   }
+  return stored.observations ?? {};
 }
 
 async function runAllWatches(env: Env) {
-  const ids = await listWatchIds(env);
+  const all = await listAllWatches(env);
   const { stops } = await loadStopsCatalog(env);
   const { via } = await loadViaBeyond(env);
   const cache = createEvalCache(stops, via);
@@ -285,10 +280,8 @@ async function runAllWatches(env: Env) {
   let skippedUnchanged = 0;
   let written = 0;
 
-  for (const id of ids) {
-    const raw = await env.WATCHES.get(id);
-    if (!raw) continue;
-    const stored = JSON.parse(raw) as StoredWatch;
+  for (const stored of all) {
+    const id = stored.id;
     if (!stored.webhook) continue;
 
     if (!isWatchDue(stored, now)) {
@@ -315,7 +308,7 @@ async function runAllWatches(env: Env) {
       const pushed = await sendWebhook(stored.webhook, snapshot);
       stored.observations = snapshot.observations;
       stored.lastFingerprint = fp;
-      await env.WATCHES.put(id, JSON.stringify(stored));
+      await putWatch(env, stored);
       written += 1;
       results.push({
         id,
@@ -327,11 +320,10 @@ async function runAllWatches(env: Env) {
     }
 
     // Persist only when fingerprint or delay-tracking observations changed.
-    // Avoids burning Free-plan KV write quota on quiet minutes.
     if (fpChanged || obsChanged) {
       stored.observations = snapshot.observations;
       stored.lastFingerprint = fp;
-      await env.WATCHES.put(id, JSON.stringify(stored));
+      await putWatch(env, stored);
       written += 1;
       results.push({
         id,
@@ -355,7 +347,8 @@ async function runAllWatches(env: Env) {
     skippedInactive,
     skippedUnchanged,
     written,
-    total: ids.length,
+    total: all.length,
+    storage: storageBackend(env),
     results,
   };
 }
@@ -379,29 +372,6 @@ function observationsEqual(
 function normalizeObs(value: number | TripObservation): TripObservation {
   if (typeof value === "number") return { first: value, last: value };
   return value;
-}
-
-async function listWatchIds(env: Env): Promise<string[]> {
-  const raw = await env.WATCHES.get("index:watches");
-  if (!raw) return [];
-  try {
-    return JSON.parse(raw) as string[];
-  } catch {
-    return [];
-  }
-}
-
-async function indexWatch(env: Env, id: string): Promise<void> {
-  const ids = await listWatchIds(env);
-  if (ids.includes(id)) return;
-  await env.WATCHES.put("index:watches", JSON.stringify([...ids, id]));
-}
-
-async function unindexWatch(env: Env, id: string): Promise<void> {
-  const ids = await listWatchIds(env);
-  const next = ids.filter((item) => item !== id);
-  if (next.length === ids.length) return;
-  await env.WATCHES.put("index:watches", JSON.stringify(next));
 }
 
 function normalizeWebhook(value: string | undefined): string {

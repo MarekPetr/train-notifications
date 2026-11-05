@@ -118,7 +118,8 @@ curl.exe --get "http://127.0.0.1:8787/watch/Tisnov/Brno" --data-urlencode "od=06
 - Odjezdy: IDS JMK board API, fallback `dpmbinfo` (stejný feed jako mapa IDS JMK)
 - Výluky: otevřená data Brna (IDS JMK výluky/odklony)
 - Zpoždění: explicitní `+N` z boardu, jinak skluz live odhadu mezi kontrolami u registrovaných watchů
-- Zastávky: denní import GTFS KORDIS do KV (`catalog:stops`); bez KV záznamu platí bundle z deploye
+- Zastávky: denní import GTFS KORDIS do storage (`catalog:stops`); bez záznamu platí bundle z deploye
+- Úložiště: Durable Object (`STORAGE_BACKEND=do`, výchozí) nebo Workers KV (`STORAGE_BACKEND=kv`)
 
 ## Webovka (Cloudflare Worker Assets)
 
@@ -130,10 +131,14 @@ jako API: `https://train-notifications.<subdomain>.workers.dev`.
 2. Stanice **Od** / **Do** vybírej z nápovědy (katalog IDS JMK).
 3. Vyplň časové okno a MacroDroid webhook → **Uložit** / **Test push**.
 
-Seznam zastávek bere UI z `GET /api/stops` (katalog v KV, fallback na zapečený bundle).
+Seznam zastávek bere UI z `GET /api/stops` (katalog ve storage, fallback na zapečený bundle).
 Worker ho jednou denně (03:00 UTC) přegeneruje z GTFS KORDIS; ručně: `POST /api/refresh-stops`.
 Lokální seed / fallback bundle: `npm run build:stops`.
-Krátké API usage JSON: `GET /api`.
+Krátké API usage JSON: `GET /api` (včetně `storage: "do"|"kv"`).
+
+Přepínač backendu v `wrangler.toml` → `[vars]` → `STORAGE_BACKEND`:
+- `do` — Durable Object (nežere Free KV write kvótu; při prvním startu jednorázově zkopíruje data z KV)
+- `kv` — původní Workers KV (limit ~1000 zápisů/den na Free)
 
 ### Privátní přístup (Cloudflare Access)
 
@@ -152,6 +157,6 @@ Veřejný GitHub Pages vypni (**Settings → Pages → None**), ať nezůstane o
 
 ```bash
 npx wrangler kv namespace create WATCHES
-# doplň id do wrangler.toml
+# doplň id do wrangler.toml (KV zůstává kvůli STORAGE_BACKEND=kv / migraci)
 npm run deploy
 ```

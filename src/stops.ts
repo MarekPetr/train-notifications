@@ -6,32 +6,21 @@ import {
   normalize,
   placeCore,
 } from "./names";
-import type { Env } from "./types";
+import {
+  getDeployId,
+  getStopsCatalog as storageGetStops,
+  putStopsCatalog as storagePutStops,
+} from "./storage";
+import type { Env, StopRef, StopsCatalogMeta } from "./types";
 import {
   clearViaMemoryCache,
   loadViaBeyond,
   saveViaBeyond,
 } from "./via";
 
-export interface StopRef {
-  name: string;
-  stopId: number;
-  lat: number;
-  lon: number;
-}
+export type { StopRef, StopsCatalogMeta };
 
-export interface StopsCatalogMeta {
-  updatedAt: string;
-  count: number;
-  source: "kv" | "bundle" | "gtfs";
-  viaPairCount?: number;
-}
-
-const CATALOG_KEY = "catalog:stops";
-const META_KEY = "catalog:stops:meta";
-const DEPLOY_KEY = "catalog:deployId";
-
-/** Isolate-lifetime cache so cron/API reuse one KV read. */
+/** Isolate-lifetime cache so cron/API reuse one storage read. */
 let memoryCatalog: StopRef[] | null = null;
 let memoryMeta: StopsCatalogMeta | null = null;
 let readyDeployId: string | null = null;
@@ -44,27 +33,11 @@ export async function loadStopsCatalog(
     return { stops: memoryCatalog, meta: memoryMeta };
   }
 
-  const raw = await env.WATCHES.get(CATALOG_KEY);
-  if (raw) {
-    try {
-      const stops = JSON.parse(raw) as StopRef[];
-      if (Array.isArray(stops) && stops.length > 0) {
-        const metaRaw = await env.WATCHES.get(META_KEY);
-        const meta = metaRaw
-          ? (JSON.parse(metaRaw) as StopsCatalogMeta)
-          : {
-              updatedAt: "",
-              count: stops.length,
-              source: "kv" as const,
-            };
-        meta.source = "kv";
-        memoryCatalog = stops;
-        memoryMeta = meta;
-        return { stops, meta };
-      }
-    } catch {
-      // fall through to bundle
-    }
+  const stored = await storageGetStops(env);
+  if (stored) {
+    memoryCatalog = stored.stops;
+    memoryMeta = stored.meta;
+    return stored;
   }
 
   const stops = bundledStops as StopRef[];
@@ -102,7 +75,11 @@ export function resolveStop(query: string, stops: StopRef[]): StopRef | null {
 
     if (qCore && sCore && qCore === sCore) score = 920;
     else if (qCore && name.startsWith(qCore + " ")) score = 860;
-    else if (qCore && sCore && (sCore.startsWith(qCore + " ") || qCore.startsWith(sCore + " ")))
+    else if (
+      qCore &&
+      sCore &&
+      (sCore.startsWith(qCore + " ") || qCore.startsWith(sCore + " "))
+    )
       score = 820;
     else if (name.startsWith(q + " ")) score = 800;
     else if (name.startsWith(q)) score = 700;
@@ -120,7 +97,7 @@ export function resolveStop(query: string, stops: StopRef[]): StopRef | null {
   return best?.stop ?? null;
 }
 
-/** Fetch GTFS, parse stops + via index, write KV. Daily cron / POST /api/refresh-stops. */
+/** Fetch GTFS, parse stops + via index, persist via STORAGE_BACKEND. */
 export async function refreshStopsCatalog(env: Env): Promise<StopsCatalogMeta> {
   const { stops, viaBeyond } = await buildCatalogFromGtfs();
   if (stops.length < 100) {
@@ -137,18 +114,17 @@ export async function refreshStopsCatalog(env: Env): Promise<StopsCatalogMeta> {
     viaPairCount: viaMeta.pairCount,
   };
 
-  await env.WATCHES.put(CATALOG_KEY, JSON.stringify(stops));
-  await env.WATCHES.put(META_KEY, JSON.stringify(meta));
-  await env.WATCHES.put(DEPLOY_KEY, currentDeployId(env));
+  const deployId = currentDeployId(env);
+  await storagePutStops(env, stops, meta, deployId);
 
   memoryCatalog = stops;
   memoryMeta = { ...meta, source: "kv" };
-  readyDeployId = currentDeployId(env);
+  readyDeployId = deployId;
   return meta;
 }
 
 /**
- * After each deploy (new DEPLOY_ID), rebuild stops + via into KV once.
+ * After each deploy (new DEPLOY_ID), rebuild stops + via once.
  * Also runs when catalog is missing/empty. Deduped per isolate.
  */
 export async function ensureCatalogForDeploy(
@@ -161,7 +137,7 @@ export async function ensureCatalogForDeploy(
 
   if (!ensureInflight) {
     ensureInflight = (async () => {
-      const storedDeploy = await env.WATCHES.get(DEPLOY_KEY);
+      const storedDeploy = await getDeployId(env);
       const { stops, meta } = await loadStopsCatalog(env);
       const { meta: viaMeta } = await loadViaBeyond(env);
       const needsRefresh =
@@ -190,7 +166,7 @@ function currentDeployId(env: Env): string {
   return (env.DEPLOY_ID || "local").trim() || "local";
 }
 
-/** Clear isolate cache (tests / after manual KV wipe). */
+/** Clear isolate cache (tests / after manual storage wipe). */
 export function clearStopsMemoryCache(): void {
   memoryCatalog = null;
   memoryMeta = null;

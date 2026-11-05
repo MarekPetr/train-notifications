@@ -1,11 +1,12 @@
 import { destinationsMatch, normalize } from "./names";
-import { resolveStop, type StopRef } from "./stops";
-import type { ViaBeyondIndex } from "./via";
+import { resolveStop } from "./stops";
 import { isWithinWindow } from "./watch";
 import type {
   AlertEvent,
   DepartureEvent,
+  StopRef,
   TripObservation,
+  ViaBeyondIndex,
   WatchConfig,
 } from "./types";
 

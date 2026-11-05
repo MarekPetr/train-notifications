@@ -4,8 +4,8 @@ compatibility_date = "2025-10-11"
 compatibility_flags = ["nodejs_compat"]
 
 [triggers]
-# Every 2 minutes: halves Free KV/API burn vs every minute; still fine for delays.
-# 03:00 UTC: refresh stop catalog from KORDIS GTFS into KV.
+# Every 2 minutes: check watches.
+# 03:00 UTC: refresh stop catalog from KORDIS GTFS.
 crons = ["*/2 * * * *", "0 3 * * *"]
 
 [[kv_namespaces]]
@@ -13,10 +13,20 @@ binding = "WATCHES"
 id = "32be688087a543128affb86fa91cf12e"
 preview_id = "554e20aa885942e79d999f86b7e07bb0"
 
+[[durable_objects.bindings]]
+name = "APP_STORE"
+class_name = "AppStore"
+
+[[migrations]]
+tag = "v1-app-store"
+new_sqlite_classes = ["AppStore"]
+
 [vars]
 TZ = "Europe/Prague"
 # Overridden on each `npm run deploy` — bumps catalog rebuild.
 DEPLOY_ID = "local-dev"
+# Storage backend: "do" (Durable Object, default) or "kv" (Workers KV).
+STORAGE_BACKEND = "do"
 
 [assets]
 directory = "./docs"

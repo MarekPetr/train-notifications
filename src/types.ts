@@ -1,9 +1,38 @@
+import type { AppStore } from "./store";
+
 export interface Env {
+  APP_STORE: DurableObjectNamespace<AppStore>;
+  /** Kept for STORAGE_BACKEND=kv and one-shot DO migration. */
   WATCHES: KVNamespace;
   ASSETS: Fetcher;
   TZ: string;
   /** Set on each `npm run deploy` — triggers one-shot GTFS catalog rebuild. */
   DEPLOY_ID: string;
+  /** `do` (default) = Durable Object; `kv` = legacy Workers KV. */
+  STORAGE_BACKEND?: string;
+}
+
+export interface StopRef {
+  name: string;
+  stopId: number;
+  lat: number;
+  lon: number;
+}
+
+export interface StopsCatalogMeta {
+  updatedAt: string;
+  count: number;
+  source: "kv" | "bundle" | "gtfs";
+  viaPairCount?: number;
+}
+
+/** fromStopId|toStopId → terminus stopIds that continue past `to`. */
+export type ViaBeyondIndex = Record<string, number[]>;
+
+export interface ViaCatalogMeta {
+  updatedAt: string;
+  pairCount: number;
+  source: "kv" | "empty";
 }
 
 export interface WatchConfig {
