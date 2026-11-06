@@ -299,12 +299,16 @@ async function runAllWatches(env: Env) {
       stored.minDelay,
     );
 
-    const shouldNotify =
-      snapshot.noteworthy.length > 0 || snapshot.alerts.length > 0;
     const fpChanged = fp !== stored.lastFingerprint;
     const obsChanged = !observationsEqual(previousObs, snapshot.observations);
+    // Jen nové/změněné zpoždění·zrušení nebo výluky — ne „all clear“
+    // (dřív při výluce bez zpoždění odcházel text „Bez zpoždění“).
+    const shouldNotify = shouldNotifyForFingerprint(
+      stored.lastFingerprint,
+      fp,
+    );
 
-    if (shouldNotify && fpChanged) {
+    if (shouldNotify) {
       const pushed = await sendWebhook(stored.webhook, snapshot);
       stored.observations = snapshot.observations;
       stored.lastFingerprint = fp;
@@ -328,7 +332,7 @@ async function runAllWatches(env: Env) {
       results.push({
         id,
         notified: false,
-        reason: !shouldNotify ? "nothing_noteworthy" : "unchanged",
+        reason: "nothing_noteworthy",
         saved: true,
       });
     } else {
@@ -336,7 +340,7 @@ async function runAllWatches(env: Env) {
       results.push({
         id,
         notified: false,
-        reason: !shouldNotify ? "nothing_noteworthy" : "unchanged",
+        reason: "unchanged",
         saved: false,
       });
     }
@@ -351,6 +355,27 @@ async function runAllWatches(env: Env) {
     storage: storageBackend(env),
     results,
   };
+}
+
+/**
+ * Notify only when a non-empty dep/alert fingerprint part appears or changes.
+ * Clearing delays/alerts must not push (avoids “Bez zpoždění” spam).
+ */
+function shouldNotifyForFingerprint(
+  previous: string | undefined,
+  next: string,
+): boolean {
+  const prev = splitFingerprint(previous ?? "");
+  const cur = splitFingerprint(next);
+  const depEvent = cur.dep !== "" && cur.dep !== prev.dep;
+  const alertEvent = cur.alert !== "" && cur.alert !== prev.alert;
+  return depEvent || alertEvent;
+}
+
+function splitFingerprint(fp: string): { dep: string; alert: string } {
+  const i = fp.indexOf("#");
+  if (i < 0) return { dep: fp, alert: "" };
+  return { dep: fp.slice(0, i), alert: fp.slice(i + 1) };
 }
 
 function observationsEqual(

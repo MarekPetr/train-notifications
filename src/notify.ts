@@ -6,6 +6,12 @@ export async function sendWebhook(
 ): Promise<{ ok: boolean; status: number; body: string }> {
   const noteworthy = snapshot.noteworthy;
   const { from, to } = snapshot.watch;
+  const alertText = snapshot.alerts
+    .slice(0, 3)
+    .map((a) => `${a.header}: ${a.description}`.slice(0, 180))
+    .join("\n");
+
+  // "Bez zpoždění" jen pro ruční test (push=1). Cron posílá zpoždění / zrušení / výluky.
   const text =
     noteworthy.length > 0
       ? noteworthy
@@ -19,12 +25,9 @@ export async function sendWebhook(
             return `ZPOŽDĚNÍ +${d.delayMinutes ?? "?"} min ${d.line} ${when} z ${from} do ${to}`;
           })
           .join("\n")
-      : `Bez zpoždění z ${from} do ${to}`;
-
-  const alertText = snapshot.alerts
-    .slice(0, 3)
-    .map((a) => `${a.header}: ${a.description}`.slice(0, 180))
-    .join("\n");
+      : alertText
+        ? `VÝLUKA z ${from} do ${to}\n${alertText}`
+        : `Bez zpoždění z ${from} do ${to}`;
 
   // MacroDroid spolehlivě mapuje query parametry na magické texty ({message}, …).
   // JSON body často ne — proto posíláme GET s query stringem.
