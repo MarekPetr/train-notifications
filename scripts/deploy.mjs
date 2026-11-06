@@ -16,14 +16,8 @@ function gitShort() {
 }
 
 const deployId = `${Date.now()}-${gitShort()}`;
-console.log(`Building web UI…`);
-execFileSync("pnpm", ["build:web"], {
-  cwd: root,
-  stdio: "inherit",
-  shell: true,
-});
-
 console.log(`Deploying with DEPLOY_ID=${deployId}`);
+// `wrangler.toml` [build] runs `pnpm run build:web` before upload.
 execFileSync(
   "pnpm",
   ["exec", "wrangler", "deploy", "--var", `DEPLOY_ID:${deployId}`],

@@ -63,8 +63,7 @@ V MacroDroidu buď dvě makra (dvě webhook URL), nebo jedno makro a oba `PUT` n
 ```bash
 pnpm install
 pnpm build:stops   # jednorázově katalog zastávek z GTFS KORDIS
-pnpm build:web     # Vue + Tailwind UI → web/dist
-pnpm dev
+pnpm dev           # wrangler [build] sestaví web/dist, pak Worker
 ```
 
 Jen UI (Vite, API proxy na `:8787`): `pnpm dev:web`.
@@ -130,8 +129,10 @@ UI je Vue 3 + Tailwind ve složce `web/` (build do `web/dist`) a nasazuje se spo
 s Workerem (Assets). Produkční URL je stejná jako API:
 `https://train-notifications.<subdomain>.workers.dev`.
 
-1. Lokálně: `pnpm build:web && pnpm dev` — UI i API na `http://127.0.0.1:8787`.
+1. Lokálně: `pnpm dev` — UI i API na `http://127.0.0.1:8787`.
    Alternativa: `pnpm dev:web` (Vite) + Worker zvlášť na `:8787`.
+   Cloudflare Workers Builds: Deploy command může zůstat `npx wrangler deploy`
+   (`[build]` v `wrangler.toml` sestaví UI).
 2. Stanice **Od** / **Do** vybírej z nápovědy (katalog IDS JMK).
 3. Vyplň časové okno a MacroDroid webhook → **Uložit** / **Test push**.
 

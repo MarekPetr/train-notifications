@@ -28,6 +28,10 @@ DEPLOY_ID = "local-dev"
 # Storage backend: "do" (Durable Object, default) or "kv" (Workers KV).
 STORAGE_BACKEND = "do"
 
+# Runs before `wrangler deploy` / `wrangler dev` (incl. Cloudflare Workers Builds).
+[build]
+command = "pnpm run build:web"
+
 [assets]
 directory = "./web/dist"
 binding = "ASSETS"
