@@ -16,10 +16,16 @@ function gitShort() {
 }
 
 const deployId = `${Date.now()}-${gitShort()}`;
-console.log(`Deploying with DEPLOY_ID=${deployId}`);
+console.log(`Building web UI…`);
+execFileSync("pnpm", ["build:web"], {
+  cwd: root,
+  stdio: "inherit",
+  shell: true,
+});
 
+console.log(`Deploying with DEPLOY_ID=${deployId}`);
 execFileSync(
-  "npx",
-  ["wrangler", "deploy", "--var", `DEPLOY_ID:${deployId}`],
+  "pnpm",
+  ["exec", "wrangler", "deploy", "--var", `DEPLOY_ID:${deployId}`],
   { cwd: root, stdio: "inherit", shell: true },
 );

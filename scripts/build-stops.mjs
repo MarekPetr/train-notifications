@@ -82,11 +82,11 @@ const stops = [...byName.values()].sort((a, b) => a.name.localeCompare(b.name, "
 fs.writeFileSync(path.join(outDir, "stops.json"), JSON.stringify(stops));
 console.log(`Wrote ${stops.length} stops to src/data/stops.json`);
 
-const docsDir = path.join(root, "docs");
-fs.mkdirSync(docsDir, { recursive: true });
+const webPublic = path.join(root, "web", "public");
+fs.mkdirSync(webPublic, { recursive: true });
 const names = stops.map((s) => s.name);
-fs.writeFileSync(path.join(docsDir, "stops.json"), JSON.stringify(names));
-console.log(`Wrote ${names.length} stop names to docs/stops.json`);
+fs.writeFileSync(path.join(webPublic, "stops.json"), JSON.stringify(names));
+console.log(`Wrote ${names.length} stop names to web/public/stops.json`);
 console.log(
   "Note: via-beyond index is built by Worker refresh (KV catalog:via-beyond), not this script.",
 );

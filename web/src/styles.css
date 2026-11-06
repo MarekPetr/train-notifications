@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #f3efe6;
+  --color-ink: #1c1914;
+  --color-muted: #5c564c;
+  --color-card: #fffdf8;
+  --color-line: #d7d0c3;
+  --color-accent: #0f5c4c;
+  --color-danger: #8b2e2e;
+  --color-focus: #c45c26;
+  --color-wash: #efe4cf;
+  --color-option-hover: #efe8da;
+  --font-sans: "Segoe UI", "Iosevka Aile", "IBM Plex Sans", ui-sans-serif,
+    system-ui, sans-serif;
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+
+  body {
+    @apply m-0 min-h-screen bg-bg font-sans text-ink;
+    background-image:
+      radial-gradient(circle at top left, var(--color-wash) 0, transparent 40%),
+      linear-gradient(180deg, #f7f2e8, var(--color-bg));
+  }
+}
+
+@layer components {
+  .field {
+    @apply w-full rounded-[0.55rem] border border-line bg-white px-[0.8rem] py-[0.7rem] text-ink;
+    font: inherit;
+  }
+
+  .field:focus {
+    @apply outline-2 outline-offset-1 outline-focus;
+  }
+
+  .btn {
+    @apply cursor-pointer rounded-full border border-line bg-white px-[0.95rem] py-[0.55rem] font-semibold text-ink;
+    font: inherit;
+  }
+
+  .btn:hover {
+    border-color: #b7ae9e;
+  }
+
+  .btn-primary {
+    @apply border-accent bg-accent text-white;
+  }
+
+  .btn-danger {
+    @apply border-[#e0b4b4] text-danger;
+  }
+
+  .btn-sm {
+    @apply px-3 py-1.5 text-[0.88rem];
+  }
+}

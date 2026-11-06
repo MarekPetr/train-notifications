@@ -6,7 +6,7 @@ export interface Env {
   WATCHES: KVNamespace;
   ASSETS: Fetcher;
   TZ: string;
-  /** Set on each `npm run deploy` — triggers one-shot GTFS catalog rebuild. */
+  /** Set on each `pnpm deploy` — triggers one-shot GTFS catalog rebuild. */
   DEPLOY_ID: string;
   /** `do` (default) = Durable Object; `kv` = legacy Workers KV. */
   STORAGE_BACKEND?: string;

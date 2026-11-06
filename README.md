@@ -61,10 +61,13 @@ V MacroDroidu buď dvě makra (dvě webhook URL), nebo jedno makro a oba `PUT` n
 ## Lokálně
 
 ```bash
-npm install
-npm run build:stops   # jednorázově katalog zastávek z GTFS KORDIS
-npm run dev
+pnpm install
+pnpm build:stops   # jednorázově katalog zastávek z GTFS KORDIS
+pnpm build:web     # Vue + Tailwind UI → web/dist
+pnpm dev
 ```
+
+Jen UI (Vite, API proxy na `:8787`): `pnpm dev:web`.
 
 Ověření:
 
@@ -123,18 +126,19 @@ curl.exe --get "http://127.0.0.1:8787/watch/Tisnov/Brno" --data-urlencode "od=06
 
 ## Webovka (Cloudflare Worker Assets)
 
-UI je ve složce `docs/` a nasazuje se spolu s Workerem (Assets). Produkční URL je stejná
-jako API: `https://train-notifications.<subdomain>.workers.dev`.
+UI je Vue 3 + Tailwind ve složce `web/` (build do `web/dist`) a nasazuje se spolu
+s Workerem (Assets). Produkční URL je stejná jako API:
+`https://train-notifications.<subdomain>.workers.dev`.
 
-1. Lokálně: `npm run dev` — UI i API na `http://127.0.0.1:8787`.
-   Alternativa: `npx serve docs` + Worker zvlášť (API na `:8787`, CORS je zapnuté).
+1. Lokálně: `pnpm build:web && pnpm dev` — UI i API na `http://127.0.0.1:8787`.
+   Alternativa: `pnpm dev:web` (Vite) + Worker zvlášť na `:8787`.
 2. Stanice **Od** / **Do** vybírej z nápovědy (katalog IDS JMK).
 3. Vyplň časové okno a MacroDroid webhook → **Uložit** / **Test push**.
 
-Seznam zastávek bere UI z `GET /api/stops` (katalog ve storage, fallback na zapečený bundle).
-Worker ho jednou denně (03:00 UTC) přegeneruje z GTFS KORDIS; ručně: `POST /api/refresh-stops`.
-Lokální seed / fallback bundle: `npm run build:stops`.
-Krátké API usage JSON: `GET /api` (včetně `storage: "do"|"kv"`).
+Seznam zastávek bere UI z `GET /api/stops` (katalog ve storage, fallback na
+`web/public/stops.json`). Worker ho jednou denně (03:00 UTC) přegeneruje z GTFS
+KORDIS; ručně: `POST /api/refresh-stops`. Lokální seed / fallback:
+`pnpm build:stops`. Krátké API usage JSON: `GET /api` (včetně `storage: "do"|"kv"`).
 
 Přepínač backendu v `wrangler.toml` → `[vars]` → `STORAGE_BACKEND`:
 - `do` — Durable Object (nežere Free KV write kvótu; při prvním startu jednorázově zkopíruje data z KV)
@@ -156,7 +160,7 @@ Veřejný GitHub Pages vypni (**Settings → Pages → None**), ať nezůstane o
 ## Deploy Workeru
 
 ```bash
-npx wrangler kv namespace create WATCHES
+pnpm exec wrangler kv namespace create WATCHES
 # doplň id do wrangler.toml (KV zůstává kvůli STORAGE_BACKEND=kv / migraci)
-npm run deploy
+pnpm deploy
 ```

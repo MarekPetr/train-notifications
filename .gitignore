@@ -1,6 +1,7 @@
 node_modules/
 .wrangler/
 dist/
+web/dist/
 .dev.vars
 *.log
 tisnov-brno-sample.json
