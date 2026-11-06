@@ -39,7 +39,7 @@ function fields() {
     timeFrom: timeFrom.value.trim(),
     timeTo: timeTo.value.trim(),
     webhook: webhook.value.trim(),
-    minDelay: minDelay.value.trim(),
+    minDelay: String(minDelay.value ?? "").trim(),
   };
 }
 
@@ -216,6 +216,7 @@ async function onRegister() {
     return;
   }
   if (!warnUnknownStops()) return;
+
   const previousId = editingId.value;
   try {
     const body = (await call(
@@ -336,7 +337,7 @@ onMounted(() => {
       Nastavení sledování zpoždění IDS JMK a push do MacroDroidu.
     </p>
 
-    <form class="mt-5 grid gap-[0.9rem]" @submit.prevent>
+    <form class="mt-5 grid gap-[0.9rem]" @submit.prevent="onRegister">
       <div class="grid grid-cols-2 gap-[0.9rem] max-md:grid-cols-1">
         <label class="grid gap-[0.35rem] text-[0.92rem] font-semibold">
           Od
@@ -388,15 +389,15 @@ onMounted(() => {
         <input
           v-model="minDelay"
           class="field"
-          type="number"
-          min="0"
+          type="text"
+          inputmode="numeric"
           placeholder="prázdné = jen zrušení"
         />
       </label>
 
       <div class="mt-1 flex flex-wrap gap-[0.55rem]">
         <button type="button" class="btn" @click="onStatus">Stav</button>
-        <button type="button" class="btn btn-primary" @click="onRegister">
+        <button type="submit" class="btn btn-primary">
           Uložit
         </button>
         <button v-if="editing" type="button" class="btn" @click="onCancel">
