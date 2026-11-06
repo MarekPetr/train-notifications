@@ -1,7 +1,4 @@
-import {
-  getViaBeyond as storageGetVia,
-  putViaBeyond as storagePutVia,
-} from "./storage";
+import { createStorage } from "./storage";
 import type { Env, ViaBeyondIndex, ViaCatalogMeta } from "./types";
 
 export type { ViaBeyondIndex, ViaCatalogMeta };
@@ -16,7 +13,7 @@ export async function loadViaBeyond(
     return { via: memoryVia, meta: memoryMeta };
   }
 
-  const stored = await storageGetVia(env);
+  const stored = await createStorage(env).getViaBeyond();
   if (stored) {
     memoryVia = stored.via;
     memoryMeta = stored.meta;
@@ -44,7 +41,7 @@ export async function saveViaBeyond(
     pairCount: Object.keys(via).length,
     source: "kv",
   };
-  await storagePutVia(env, via, meta);
+  await createStorage(env).putViaBeyond(via, meta);
   memoryVia = via;
   memoryMeta = meta;
   return meta;

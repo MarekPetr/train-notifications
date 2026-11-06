@@ -17,176 +17,226 @@ const KEY_VIA_META = "catalog:via-beyond:meta";
 const KEY_DEPLOY = "catalog:deployId";
 const KEY_INDEX = "index:watches";
 
+/** Persistence port — callers depend on this, not on DO/KV. */
+export interface AppStorage {
+  readonly backend: StorageBackend;
+  getWatch(id: string): Promise<StoredWatch | null>;
+  putWatch(watch: StoredWatch): Promise<void>;
+  deleteWatch(id: string): Promise<boolean>;
+  listWatchIds(): Promise<string[]>;
+  listAllWatches(): Promise<StoredWatch[]>;
+  getStopsCatalog(): Promise<{
+    stops: StopRef[];
+    meta: StopsCatalogMeta;
+  } | null>;
+  putStopsCatalog(
+    stops: StopRef[],
+    meta: StopsCatalogMeta,
+    deployId: string,
+  ): Promise<void>;
+  getViaBeyond(): Promise<{
+    via: ViaBeyondIndex;
+    meta: ViaCatalogMeta;
+  } | null>;
+  putViaBeyond(via: ViaBeyondIndex, meta: ViaCatalogMeta): Promise<void>;
+  getDeployId(): Promise<string | null>;
+}
+
 /** `STORAGE_BACKEND=kv` keeps Free/KV path; default `do` uses Durable Object. */
 export function storageBackend(env: Env): StorageBackend {
   const raw = (env.STORAGE_BACKEND || "do").trim().toLowerCase();
   return raw === "kv" ? "kv" : "do";
 }
 
-function requireKv(env: Env): KVNamespace {
-  if (!env.WATCHES) {
-    throw new Error("WATCHES KV binding chybí (STORAGE_BACKEND=kv)");
-  }
-  return env.WATCHES;
+/** Composition root: pick adapter from env. */
+export function createStorage(env: Env): AppStorage {
+  return storageBackend(env) === "kv"
+    ? new KvAppStorage(env)
+    : new DoAppStorage(env);
 }
 
-export async function getWatch(
-  env: Env,
-  id: string,
-): Promise<StoredWatch | null> {
-  if (storageBackend(env) === "do") {
-    return appStore(env).getWatch(id);
+class DoAppStorage implements AppStorage {
+  readonly backend = "do" as const;
+  private readonly store: ReturnType<typeof appStore>;
+
+  constructor(env: Env) {
+    this.store = appStore(env);
   }
-  const raw = await requireKv(env).get(id);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as StoredWatch;
-  } catch {
-    return null;
+
+  getWatch(id: string): Promise<StoredWatch | null> {
+    return this.store.getWatch(id);
+  }
+
+  putWatch(watch: StoredWatch): Promise<void> {
+    return this.store.putWatch(watch);
+  }
+
+  deleteWatch(id: string): Promise<boolean> {
+    return this.store.deleteWatch(id);
+  }
+
+  listWatchIds(): Promise<string[]> {
+    return this.store.listWatchIds();
+  }
+
+  listAllWatches(): Promise<StoredWatch[]> {
+    return this.store.listAllWatches();
+  }
+
+  getStopsCatalog(): Promise<{
+    stops: StopRef[];
+    meta: StopsCatalogMeta;
+  } | null> {
+    return this.store.getStopsCatalog();
+  }
+
+  putStopsCatalog(
+    stops: StopRef[],
+    meta: StopsCatalogMeta,
+    deployId: string,
+  ): Promise<void> {
+    return this.store.putStopsCatalog(stops, meta, deployId);
+  }
+
+  getViaBeyond(): Promise<{
+    via: ViaBeyondIndex;
+    meta: ViaCatalogMeta;
+  } | null> {
+    return this.store.getViaBeyond();
+  }
+
+  putViaBeyond(via: ViaBeyondIndex, meta: ViaCatalogMeta): Promise<void> {
+    return this.store.putViaBeyond(via, meta);
+  }
+
+  getDeployId(): Promise<string | null> {
+    return this.store.getDeployId();
   }
 }
 
-export async function putWatch(env: Env, watch: StoredWatch): Promise<void> {
-  if (storageBackend(env) === "do") {
-    await appStore(env).putWatch(watch);
-    return;
-  }
-  const kv = requireKv(env);
-  await kv.put(watch.id, JSON.stringify(watch));
-  const ids = await listWatchIds(env);
-  if (!ids.includes(watch.id)) {
-    await kv.put(KEY_INDEX, JSON.stringify([...ids, watch.id]));
-  }
-}
+class KvAppStorage implements AppStorage {
+  readonly backend = "kv" as const;
+  private readonly kv: KVNamespace;
 
-export async function deleteWatch(env: Env, id: string): Promise<boolean> {
-  if (storageBackend(env) === "do") {
-    return appStore(env).deleteWatch(id);
+  constructor(env: Env) {
+    if (!env.WATCHES) {
+      throw new Error("WATCHES KV binding chybí (STORAGE_BACKEND=kv)");
+    }
+    this.kv = env.WATCHES;
   }
-  const kv = requireKv(env);
-  const existing = await kv.get(id);
-  await kv.delete(id);
-  const ids = await listWatchIds(env);
-  const next = ids.filter((item) => item !== id);
-  if (next.length !== ids.length) {
-    await kv.put(KEY_INDEX, JSON.stringify(next));
-  }
-  return existing != null;
-}
 
-export async function listWatchIds(env: Env): Promise<string[]> {
-  if (storageBackend(env) === "do") {
-    return appStore(env).listWatchIds();
-  }
-  const raw = await requireKv(env).get(KEY_INDEX);
-  if (!raw) return [];
-  try {
-    return JSON.parse(raw) as string[];
-  } catch {
-    return [];
-  }
-}
-
-export async function listAllWatches(env: Env): Promise<StoredWatch[]> {
-  if (storageBackend(env) === "do") {
-    return appStore(env).listAllWatches();
-  }
-  const ids = await listWatchIds(env);
-  const watches: StoredWatch[] = [];
-  const kv = requireKv(env);
-  for (const id of ids) {
-    const raw = await kv.get(id);
-    if (!raw) continue;
+  async getWatch(id: string): Promise<StoredWatch | null> {
+    const raw = await this.kv.get(id);
+    if (!raw) return null;
     try {
-      watches.push(JSON.parse(raw) as StoredWatch);
+      return JSON.parse(raw) as StoredWatch;
     } catch {
-      // skip
+      return null;
     }
   }
-  return watches;
-}
 
-export async function getStopsCatalog(
-  env: Env,
-): Promise<{ stops: StopRef[]; meta: StopsCatalogMeta } | null> {
-  if (storageBackend(env) === "do") {
-    return appStore(env).getStopsCatalog();
+  async putWatch(watch: StoredWatch): Promise<void> {
+    await this.kv.put(watch.id, JSON.stringify(watch));
+    const ids = await this.listWatchIds();
+    if (!ids.includes(watch.id)) {
+      await this.kv.put(KEY_INDEX, JSON.stringify([...ids, watch.id]));
+    }
   }
-  const kv = requireKv(env);
-  const raw = await kv.get(KEY_STOPS);
-  if (!raw) return null;
-  try {
-    const stops = JSON.parse(raw) as StopRef[];
-    if (!Array.isArray(stops) || stops.length === 0) return null;
-    const metaRaw = await kv.get(KEY_STOPS_META);
-    const meta = metaRaw
-      ? (JSON.parse(metaRaw) as StopsCatalogMeta)
-      : { updatedAt: "", count: stops.length, source: "kv" as const };
-    return { stops, meta: { ...meta, source: "kv" } };
-  } catch {
-    return null;
-  }
-}
 
-export async function putStopsCatalog(
-  env: Env,
-  stops: StopRef[],
-  meta: StopsCatalogMeta,
-  deployId: string,
-): Promise<void> {
-  if (storageBackend(env) === "do") {
-    await appStore(env).putStopsCatalog(stops, meta, deployId);
-    return;
+  async deleteWatch(id: string): Promise<boolean> {
+    const existing = await this.kv.get(id);
+    await this.kv.delete(id);
+    const ids = await this.listWatchIds();
+    const next = ids.filter((item) => item !== id);
+    if (next.length !== ids.length) {
+      await this.kv.put(KEY_INDEX, JSON.stringify(next));
+    }
+    return existing != null;
   }
-  const kv = requireKv(env);
-  await kv.put(KEY_STOPS, JSON.stringify(stops));
-  await kv.put(KEY_STOPS_META, JSON.stringify(meta));
-  await kv.put(KEY_DEPLOY, deployId);
-}
 
-export async function getViaBeyond(
-  env: Env,
-): Promise<{ via: ViaBeyondIndex; meta: ViaCatalogMeta } | null> {
-  if (storageBackend(env) === "do") {
-    return appStore(env).getViaBeyond();
+  async listWatchIds(): Promise<string[]> {
+    const raw = await this.kv.get(KEY_INDEX);
+    if (!raw) return [];
+    try {
+      return JSON.parse(raw) as string[];
+    } catch {
+      return [];
+    }
   }
-  const kv = requireKv(env);
-  const raw = await kv.get(KEY_VIA);
-  if (!raw) return null;
-  try {
-    const via = JSON.parse(raw) as ViaBeyondIndex;
-    if (!via || typeof via !== "object") return null;
-    const metaRaw = await kv.get(KEY_VIA_META);
-    const meta = metaRaw
-      ? (JSON.parse(metaRaw) as ViaCatalogMeta)
-      : {
-          updatedAt: "",
-          pairCount: Object.keys(via).length,
-          source: "kv" as const,
-        };
-    return { via, meta: { ...meta, source: "kv" } };
-  } catch {
-    return null;
-  }
-}
 
-export async function putViaBeyond(
-  env: Env,
-  via: ViaBeyondIndex,
-  meta: ViaCatalogMeta,
-): Promise<void> {
-  if (storageBackend(env) === "do") {
-    await appStore(env).putViaBeyond(via, meta);
-    return;
+  async listAllWatches(): Promise<StoredWatch[]> {
+    const ids = await this.listWatchIds();
+    const watches: StoredWatch[] = [];
+    for (const id of ids) {
+      const raw = await this.kv.get(id);
+      if (!raw) continue;
+      try {
+        watches.push(JSON.parse(raw) as StoredWatch);
+      } catch {
+        // skip
+      }
+    }
+    return watches;
   }
-  const kv = requireKv(env);
-  await kv.put(KEY_VIA, JSON.stringify(via));
-  await kv.put(KEY_VIA_META, JSON.stringify(meta));
-}
 
-export async function getDeployId(env: Env): Promise<string | null> {
-  if (storageBackend(env) === "do") {
-    return appStore(env).getDeployId();
+  async getStopsCatalog(): Promise<{
+    stops: StopRef[];
+    meta: StopsCatalogMeta;
+  } | null> {
+    const raw = await this.kv.get(KEY_STOPS);
+    if (!raw) return null;
+    try {
+      const stops = JSON.parse(raw) as StopRef[];
+      if (!Array.isArray(stops) || stops.length === 0) return null;
+      const metaRaw = await this.kv.get(KEY_STOPS_META);
+      const meta = metaRaw
+        ? (JSON.parse(metaRaw) as StopsCatalogMeta)
+        : { updatedAt: "", count: stops.length, source: "kv" as const };
+      return { stops, meta: { ...meta, source: "kv" } };
+    } catch {
+      return null;
+    }
   }
-  return requireKv(env).get(KEY_DEPLOY);
+
+  async putStopsCatalog(
+    stops: StopRef[],
+    meta: StopsCatalogMeta,
+    deployId: string,
+  ): Promise<void> {
+    await this.kv.put(KEY_STOPS, JSON.stringify(stops));
+    await this.kv.put(KEY_STOPS_META, JSON.stringify(meta));
+    await this.kv.put(KEY_DEPLOY, deployId);
+  }
+
+  async getViaBeyond(): Promise<{
+    via: ViaBeyondIndex;
+    meta: ViaCatalogMeta;
+  } | null> {
+    const raw = await this.kv.get(KEY_VIA);
+    if (!raw) return null;
+    try {
+      const via = JSON.parse(raw) as ViaBeyondIndex;
+      if (!via || typeof via !== "object") return null;
+      const metaRaw = await this.kv.get(KEY_VIA_META);
+      const meta = metaRaw
+        ? (JSON.parse(metaRaw) as ViaCatalogMeta)
+        : {
+            updatedAt: "",
+            pairCount: Object.keys(via).length,
+            source: "kv" as const,
+          };
+      return { via, meta: { ...meta, source: "kv" } };
+    } catch {
+      return null;
+    }
+  }
+
+  async putViaBeyond(via: ViaBeyondIndex, meta: ViaCatalogMeta): Promise<void> {
+    await this.kv.put(KEY_VIA, JSON.stringify(via));
+    await this.kv.put(KEY_VIA_META, JSON.stringify(meta));
+  }
+
+  getDeployId(): Promise<string | null> {
+    return this.kv.get(KEY_DEPLOY);
+  }
 }

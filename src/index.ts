@@ -11,13 +11,7 @@ import {
   loadStopsCatalog,
   refreshStopsCatalog,
 } from "./stops";
-import {
-  deleteWatch,
-  getWatch,
-  listAllWatches,
-  putWatch,
-  storageBackend,
-} from "./storage";
+import { createStorage } from "./storage";
 import type {
   Env,
   StoredWatch,
@@ -89,10 +83,12 @@ async function handleFetch(
     ctx.waitUntil(ensureCatalogForDeploy(env));
   }
 
+  const storage = createStorage(env);
+
   if (request.method === "GET" && url.pathname === "/api") {
     return json({
       service: "train-notifications",
-      storage: storageBackend(env),
+      storage: storage.backend,
       usage: {
         status: "GET /watch/{od}/{do}?od=06:00&do=09:00",
         register:
@@ -115,13 +111,13 @@ async function handleFetch(
       count: meta.count,
       updatedAt: meta.updatedAt || null,
       source: meta.source,
-      storage: storageBackend(env),
+      storage: storage.backend,
     });
   }
 
   if (request.method === "POST" && url.pathname === "/api/refresh-stops") {
     const meta = await refreshStopsCatalog(env);
-    return json({ refreshed: true, storage: storageBackend(env), ...meta });
+    return json({ refreshed: true, storage: storage.backend, ...meta });
   }
 
   if (parts[0] === "watch" && parts.length >= 3) {
@@ -147,7 +143,7 @@ async function handleFetch(
         );
       }
       const id = watchId(watch);
-      const existing = await getWatch(env, id);
+      const existing = await storage.getWatch(id);
       const stored: StoredWatch = {
         ...watch,
         id,
@@ -155,14 +151,14 @@ async function handleFetch(
         lastFingerprint: existing?.lastFingerprint,
         observations: existing?.observations,
       };
-      await putWatch(env, stored);
+      await storage.putWatch(stored);
       const snapshot = await buildSnapshot(watch, env);
       return json({ registered: true, id: stored.id, snapshot }, 201);
     }
 
     if (request.method === "DELETE") {
       const id = watchId(watch);
-      await deleteWatch(env, id);
+      await storage.deleteWatch(id);
       return json({ deleted: true, id });
     }
   }
@@ -177,13 +173,13 @@ async function handleFetch(
       );
     }
     if (request.method === "GET" || request.method === "DELETE") {
-      const stored = await getWatch(env, id);
+      const stored = await storage.getWatch(id);
       if (!stored) return json({ error: "Watch nenalezen" }, 404);
       if (normalizeWebhook(stored.webhook) !== normalizeWebhook(webhookGate)) {
         return json({ error: "Watch nenalezen" }, 404);
       }
       if (request.method === "GET") return json(stored);
-      await deleteWatch(env, id);
+      await storage.deleteWatch(id);
       return json({ deleted: true, id });
     }
   }
@@ -199,7 +195,7 @@ async function handleFetch(
         400,
       );
     }
-    const all = await listAllWatches(env);
+    const all = await storage.listAllWatches();
     const watches = all
       .filter(
         (stored) =>
@@ -260,7 +256,7 @@ async function loadStoredObservations(
   watch: ReturnType<typeof parseWatchFromRequest>,
 ): Promise<StoredWatch["observations"]> {
   if (!watch.webhook) return {};
-  const stored = await getWatch(env, watchId(watch));
+  const stored = await createStorage(env).getWatch(watchId(watch));
   if (!stored) return {};
   if (normalizeWebhook(stored.webhook) !== normalizeWebhook(watch.webhook)) {
     return {};
@@ -269,7 +265,8 @@ async function loadStoredObservations(
 }
 
 async function runAllWatches(env: Env) {
-  const all = await listAllWatches(env);
+  const storage = createStorage(env);
+  const all = await storage.listAllWatches();
   const { stops } = await loadStopsCatalog(env);
   const { via } = await loadViaBeyond(env);
   const cache = createEvalCache(stops, via);
@@ -312,7 +309,7 @@ async function runAllWatches(env: Env) {
       const pushed = await sendWebhook(stored.webhook, snapshot);
       stored.observations = snapshot.observations;
       stored.lastFingerprint = fp;
-      await putWatch(env, stored);
+      await storage.putWatch(stored);
       written += 1;
       results.push({
         id,
@@ -327,7 +324,7 @@ async function runAllWatches(env: Env) {
     if (fpChanged || obsChanged) {
       stored.observations = snapshot.observations;
       stored.lastFingerprint = fp;
-      await putWatch(env, stored);
+      await storage.putWatch(stored);
       written += 1;
       results.push({
         id,
@@ -352,7 +349,7 @@ async function runAllWatches(env: Env) {
     skippedUnchanged,
     written,
     total: all.length,
-    storage: storageBackend(env),
+    storage: storage.backend,
     results,
   };
 }

@@ -6,11 +6,7 @@ import {
   normalize,
   placeCore,
 } from "./names";
-import {
-  getDeployId,
-  getStopsCatalog as storageGetStops,
-  putStopsCatalog as storagePutStops,
-} from "./storage";
+import { createStorage } from "./storage";
 import type { Env, StopRef, StopsCatalogMeta } from "./types";
 import {
   clearViaMemoryCache,
@@ -33,7 +29,7 @@ export async function loadStopsCatalog(
     return { stops: memoryCatalog, meta: memoryMeta };
   }
 
-  const stored = await storageGetStops(env);
+  const stored = await createStorage(env).getStopsCatalog();
   if (stored) {
     memoryCatalog = stored.stops;
     memoryMeta = stored.meta;
@@ -115,7 +111,7 @@ export async function refreshStopsCatalog(env: Env): Promise<StopsCatalogMeta> {
   };
 
   const deployId = currentDeployId(env);
-  await storagePutStops(env, stops, meta, deployId);
+  await createStorage(env).putStopsCatalog(stops, meta, deployId);
 
   memoryCatalog = stops;
   memoryMeta = { ...meta, source: "kv" };
@@ -137,7 +133,7 @@ export async function ensureCatalogForDeploy(
 
   if (!ensureInflight) {
     ensureInflight = (async () => {
-      const storedDeploy = await getDeployId(env);
+      const storedDeploy = await createStorage(env).getDeployId();
       const { stops, meta } = await loadStopsCatalog(env);
       const { meta: viaMeta } = await loadViaBeyond(env);
       const needsRefresh =
