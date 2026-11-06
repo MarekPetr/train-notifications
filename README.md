@@ -63,7 +63,7 @@ V MacroDroidu buď dvě makra (dvě webhook URL), nebo jedno makro a oba `PUT` n
 ```bash
 pnpm install
 pnpm build:stops   # jednorázově katalog zastávek z GTFS KORDIS
-pnpm dev           # wrangler [build] sestaví web/dist, pak Worker
+pnpm dev           # sestaví web/dist + Worker; zapne lokální cron endpoint
 ```
 
 Jen UI (Vite, API proxy na `:8787`): `pnpm dev:web`.
@@ -73,7 +73,19 @@ Ověření:
 ```bash
 curl "http://127.0.0.1:8787/watch/Tišnov/Brno?od=06:00&do=12:00"
 curl -X POST "http://127.0.0.1:8787/run"
-curl "http://127.0.0.1:8787/cdn-cgi/local/scheduled?format=json"
+```
+
+### Lokální cron (test scheduled)
+
+`pnpm dev` spouští `wrangler dev --test-scheduled`, takže můžeš ručně vyvolat
+handler `scheduled()` přes HTTP (v produkci běží crony z `wrangler.toml` samy):
+
+```bash
+# kontrola watchů (jako */2 * * * *)
+curl "http://127.0.0.1:8787/cdn-cgi/local/scheduled?cron=*/2+*+*+*+*"
+
+# noční refresh katalogu zastávek (jako 0 3 * * *)
+curl "http://127.0.0.1:8787/cdn-cgi/local/scheduled?cron=0+3+*+*+*"
 ```
 
 ## MacroDroid
