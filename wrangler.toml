@@ -3,6 +3,20 @@ main = "src/index.ts"
 compatibility_date = "2025-10-11"
 compatibility_flags = ["nodejs_compat"]
 
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true
+persist = true
+
+[observability.traces]
+enabled = true
+head_sampling_rate = 1
+persist = true
+
+[observability.issue_detection]
+enabled = true
+
 [triggers]
 # Every 2 minutes: check watches.
 # 03:00 UTC: refresh stop catalog from KORDIS GTFS.
