@@ -131,7 +131,7 @@ curl.exe --get "http://127.0.0.1:8787/watch/Tisnov/Brno" --data-urlencode "od=06
 
 - Odjezdy: IDS JMK board API, fallback `dpmbinfo` (stejný feed jako mapa IDS JMK)
 - Výluky: otevřená data Brna (IDS JMK výluky/odklony)
-- Zpoždění: explicitní `+N` z boardu, jinak skluz live odhadu mezi kontrolami u registrovaných watchů
+- Zpoždění: explicitní `Delay` z KORDIS live streamu (Brno GIS); jinak `+N` z boardu. Bez odvozování ze skluzu odhadu.
 - Zastávky: denní import GTFS KORDIS do storage (`catalog:stops`); bez záznamu platí bundle z deploye
 - Úložiště: Durable Object (`STORAGE_BACKEND=do`, výchozí) nebo Workers KV (`STORAGE_BACKEND=kv`)
 
