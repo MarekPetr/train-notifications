@@ -1,9 +1,3 @@
-import {
-  emptyDelayIndex,
-  fetchDelayIndex,
-  lookupDelay,
-  type DelayIndex,
-} from "./kordisDelay";
 import { destinationsMatch, normalize } from "./names";
 import { resolveStop } from "./stops";
 import { isWithinWindow } from "./watch";
@@ -18,12 +12,16 @@ import type {
 
 type ObservationMap = Record<string, number | TripObservation>;
 
+/** Max jump of estimate between checks to treat as the same trip (not the next service). */
+const MAX_ESTIMATE_JUMP_MIN = 10;
+/** Cap inferred delay from estimate slip (minutes). */
+const MAX_INFERRED_DELAY_MIN = 180;
+
 interface BoardDeparture {
   line: string;
   platform: string | null;
   destination: string;
   timeMark: string;
-  vehicleId: number | null;
 }
 
 const IDSJMK_DEPARTURES_URL =
@@ -32,11 +30,10 @@ const DPMBINFO_URL = "https://dpmbinfo.dpmb.cz/api/Departures";
 const VYLUKY_URL =
   "https://gis.brno.cz/ags1/rest/services/Hosted/IDS_JMK_v%C3%BDluky_a_odklony_zdroj_GeoJSON/FeatureServer/0/query";
 
-/** Shared HTTP fetches for one cron/API batch (boards + alerts + delays). */
+/** Shared HTTP fetches for one cron/API batch (boards + alerts). */
 export interface EvalCache {
   boards: Map<string, ReturnType<typeof fetchBoard>>;
   alerts: Promise<AlertEvent[]> | null;
-  delays: Promise<DelayIndex> | null;
   stops?: StopRef[];
   viaBeyond?: ViaBeyondIndex;
 }
@@ -45,13 +42,13 @@ export function createEvalCache(
   stops?: StopRef[],
   viaBeyond?: ViaBeyondIndex,
 ): EvalCache {
-  return { boards: new Map(), alerts: null, delays: null, stops, viaBeyond };
+  return { boards: new Map(), alerts: null, stops, viaBeyond };
 }
 
 export async function evaluateWatch(
   watch: WatchConfig,
   now = new Date(),
-  _observations: ObservationMap = {},
+  observations: ObservationMap = {},
   cache?: EvalCache,
   stops: StopRef[] = cache?.stops ?? [],
 ): Promise<{
@@ -63,9 +60,7 @@ export async function evaluateWatch(
 }> {
   const viaBeyond = cache?.viaBeyond ?? {};
   const board = await getBoard(watch.from, stops, cache);
-  const delays = await getDelays(cache);
-  const fromStop = resolveStop(watch.from, stops);
-
+  const nextObservations: Record<string, TripObservation> = {};
   const departures = board.departures
     .filter((dep) =>
       destinationServesWatch(
@@ -76,7 +71,9 @@ export async function evaluateWatch(
         viaBeyond,
       ),
     )
-    .map((dep) => toDepartureEvent(dep, now, watch, delays, fromStop?.stopId ?? null, stops))
+    .map((dep) =>
+      toDepartureEvent(dep, now, watch, observations, nextObservations),
+    )
     .filter((dep) => {
       const hhmm = dep.estimatedTime ?? dep.scheduledTime;
       return hhmm ? isWithinWindow(hhmm, watch.timeFrom, watch.timeTo) : true;
@@ -107,14 +104,12 @@ export async function evaluateWatch(
     }
   }
 
-  const delaySource = delays.source === "kordis_stream" ? "+kordis_delay" : "";
   return {
     departures,
     alerts,
     stopName: board.stopName,
-    source: `${board.source}${delaySource}`,
-    // Slip-tracking removed — delays come from KORDIS Delay field.
-    observations: {},
+    source: board.source,
+    observations: nextObservations,
   };
 }
 
@@ -141,12 +136,6 @@ async function getAlerts(cache?: EvalCache): Promise<AlertEvent[]> {
   if (!cache) return fetchAlerts();
   if (!cache.alerts) cache.alerts = fetchAlerts();
   return cache.alerts;
-}
-
-async function getDelays(cache?: EvalCache): Promise<DelayIndex> {
-  if (!cache) return fetchDelayIndex();
-  if (!cache.delays) cache.delays = fetchDelayIndex().catch(() => emptyDelayIndex());
-  return cache.delays;
 }
 
 async function fetchBoard(
@@ -232,7 +221,6 @@ async function fetchIdsjmk(from: string): Promise<{
       platform: d.platform,
       destination: d.destinationStop,
       timeMark: d.time,
-      vehicleId: null as number | null,
     })),
   );
 
@@ -288,7 +276,6 @@ async function fetchDpmbinfo(stopId: number): Promise<BoardDeparture[]> {
         Line: string;
         FinalStop: string;
         TimeMark: string;
-        VehicleID?: number;
       }>;
     }>;
   };
@@ -299,7 +286,6 @@ async function fetchDpmbinfo(stopId: number): Promise<BoardDeparture[]> {
       platform: String(post.PostID),
       destination: d.FinalStop,
       timeMark: d.TimeMark,
-      vehicleId: d.VehicleID && d.VehicleID > 0 ? d.VehicleID : null,
     })),
   );
 }
@@ -308,25 +294,27 @@ function toDepartureEvent(
   dep: BoardDeparture,
   now: Date,
   watch: WatchConfig,
-  delays: DelayIndex,
-  fromStopId: number | null,
-  stops: StopRef[],
+  previous: ObservationMap,
+  nextObservations: Record<string, TripObservation>,
 ): DepartureEvent {
   const parsed = parseTimeMark(dep.timeMark, now);
-  const finalStop = resolveStop(dep.destination, stops);
-  const kordisDelay = lookupDelay(delays, {
-    vehicleId: dep.vehicleId,
-    line: dep.line,
-    finalStopId: finalStop?.stopId ?? null,
-    fromStopId,
-  });
+  let delayMinutes = parsed.delayMinutes;
 
-  // Explicit only: KORDIS Delay field, else board "+N". Never infer from slip.
-  const delayMinutes =
-    kordisDelay != null ? kordisDelay : parsed.delayMinutes;
-
-  const isRealtime =
-    parsed.isRealtime || kordisDelay != null || parsed.delayMinutes != null;
+  const estimated = parsed.estimatedTime;
+  if (estimated && delayMinutes == null && parsed.isRealtime) {
+    const estimatedMins = hmToMinutes(estimated);
+    const firstSeen = matchObservation(
+      dep.line,
+      dep.destination,
+      estimatedMins,
+      previous,
+      nextObservations,
+    );
+    const slipped = estimatedMins - firstSeen;
+    if (slipped >= 0 && slipped <= MAX_INFERRED_DELAY_MIN) {
+      delayMinutes = slipped;
+    }
+  }
 
   let status: DepartureEvent["status"] = "unknown";
   if (parsed.isCancelled) status = "cancelled";
@@ -337,9 +325,10 @@ function toDepartureEvent(
   )
     status = "delayed";
   else if (
-    delayMinutes != null &&
-    (delayMinutes === 0 ||
-      (watch.minDelay != null && delayMinutes < watch.minDelay))
+    delayMinutes === 0 ||
+    (watch.minDelay != null &&
+      delayMinutes != null &&
+      delayMinutes < watch.minDelay)
   )
     status = "on_time";
 
@@ -351,10 +340,58 @@ function toDepartureEvent(
     estimatedTime: parsed.estimatedTime,
     timeMark: dep.timeMark,
     delayMinutes,
-    isRealtime,
+    isRealtime: parsed.isRealtime,
     isCancelled: parsed.isCancelled,
     status,
   };
+}
+
+function readObservation(value: number | TripObservation): TripObservation {
+  if (typeof value === "number") return { first: value, last: value };
+  return value;
+}
+
+function matchObservation(
+  line: string,
+  destination: string,
+  estimatedMins: number,
+  previous: ObservationMap,
+  nextObservations: Record<string, TripObservation>,
+): number {
+  const prefix = `${normalize(line)}|${normalize(destination)}|`;
+  let bestKey: string | null = null;
+  let bestDist = Infinity;
+  let best: TripObservation | null = null;
+
+  for (const [key, raw] of Object.entries(previous)) {
+    if (!key.startsWith(prefix)) continue;
+    if (key in nextObservations) continue;
+    const obs = readObservation(raw);
+    // Continuity vs last estimate — not vs first seen.
+    // Otherwise the next hourly R9 looks like the previous one +60 min late.
+    const jump = estimatedMins - obs.last;
+    if (jump < -3 || jump > MAX_ESTIMATE_JUMP_MIN) continue;
+    const dist = Math.abs(jump);
+    if (dist < bestDist) {
+      bestKey = key;
+      bestDist = dist;
+      best = obs;
+    }
+  }
+
+  if (bestKey && best) {
+    nextObservations[bestKey] = { first: best.first, last: estimatedMins };
+    return best.first;
+  }
+
+  const newKey = `${prefix}${estimatedMins}`;
+  nextObservations[newKey] = { first: estimatedMins, last: estimatedMins };
+  return estimatedMins;
+}
+
+function hmToMinutes(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
 }
 
 function parseTimeMark(
@@ -373,15 +410,13 @@ function parseTimeMark(
   const plusDelay = raw.match(/\+(\d+)\s*(?:min)?/i);
   const clock = cleaned.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
   const relative = cleaned.match(/\b(\d+)\s*min\b/i);
-  const explicitDelay = plusDelay ? Number(plusDelay[1]) : null;
 
   if (clock) {
     const hhmm = `${clock[1].padStart(2, "0")}:${clock[2]}`;
     return {
       scheduledTime: isRealtime ? null : hhmm,
       estimatedTime: hhmm,
-      // Only explicit "+N" from the board — not "scheduled ⇒ 0".
-      delayMinutes: explicitDelay,
+      delayMinutes: plusDelay ? Number(plusDelay[1]) : isRealtime ? null : 0,
       isRealtime,
       isCancelled,
     };
@@ -393,7 +428,7 @@ function parseTimeMark(
     return {
       scheduledTime: null,
       estimatedTime: formatHm(estimated),
-      delayMinutes: explicitDelay,
+      delayMinutes: plusDelay ? Number(plusDelay[1]) : null,
       isRealtime: true,
       isCancelled,
     };
@@ -403,7 +438,7 @@ function parseTimeMark(
     return {
       scheduledTime: null,
       estimatedTime: formatHm(now),
-      delayMinutes: explicitDelay,
+      delayMinutes: plusDelay ? Number(plusDelay[1]) : null,
       isRealtime: true,
       isCancelled,
     };
@@ -412,7 +447,7 @@ function parseTimeMark(
   return {
     scheduledTime: null,
     estimatedTime: null,
-    delayMinutes: explicitDelay,
+    delayMinutes: plusDelay ? Number(plusDelay[1]) : null,
     isRealtime,
     isCancelled,
   };

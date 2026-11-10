@@ -74,12 +74,11 @@ export interface WatchSnapshot {
   noteworthy: DepartureEvent[];
 }
 
-/**
- * Legacy slip-tracking sample (minutes from midnight, Prague).
- * No longer written — delays come from KORDIS Delay. Kept for old KV/DO rows.
- */
+/** Delay-tracking sample for one trip (minutes from midnight, Prague). */
 export interface TripObservation {
+  /** First estimated departure seen for this trip. */
   first: number;
+  /** Most recent estimated departure (for continuity matching). */
   last: number;
 }
 
@@ -87,6 +86,9 @@ export interface StoredWatch extends WatchConfig {
   id: string;
   createdAt: string;
   lastFingerprint?: string;
-  /** @deprecated Unused; explicit KORDIS Delay replaced slip tracking. */
+  /**
+   * Live estimate tracking keyed by trip identity.
+   * Legacy values may be a bare number (= first=last).
+   */
   observations?: Record<string, number | TripObservation>;
 }
