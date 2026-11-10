@@ -226,8 +226,10 @@ async function buildSnapshot(
   }
 > {
   const activeCache = cache ?? createEvalCache();
-  if (!activeCache.stops) {
-    activeCache.stops = (await loadStopsCatalog(env)).stops;
+  if (!activeCache.stops || !activeCache.stopIndex) {
+    const catalog = await loadStopsCatalog(env);
+    activeCache.stops = catalog.stops;
+    activeCache.stopIndex = catalog.index;
   }
   if (!activeCache.viaBeyond) {
     activeCache.viaBeyond = (await loadViaBeyond(env)).via;
@@ -267,9 +269,9 @@ async function loadStoredObservations(
 async function runAllWatches(env: Env) {
   const storage = createStorage(env);
   const all = await storage.listAllWatches();
-  const { stops } = await loadStopsCatalog(env);
+  const { stops, index } = await loadStopsCatalog(env);
   const { via } = await loadViaBeyond(env);
-  const cache = createEvalCache(stops, via);
+  const cache = createEvalCache(stops, via, index);
   const now = new Date();
   const results = [];
   let checked = 0;

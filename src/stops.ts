@@ -16,24 +16,64 @@ import {
 
 export type { StopRef, StopsCatalogMeta };
 
+/** Precomputed name forms so resolveStop does not NFD-normalize 3k stops per call. */
+export interface StopIndex {
+  stops: StopRef[];
+  byNormName: Map<string, StopRef>;
+  byId: Map<number, StopRef>;
+  prepared: Array<{
+    stop: StopRef;
+    name: string;
+    sCore: string;
+    railBonus: number;
+  }>;
+}
+
 /** Isolate-lifetime cache so cron/API reuse one storage read. */
 let memoryCatalog: StopRef[] | null = null;
 let memoryMeta: StopsCatalogMeta | null = null;
+let memoryIndex: StopIndex | null = null;
 let readyDeployId: string | null = null;
 let ensureInflight: Promise<StopsCatalogMeta | null> | null = null;
 
+export function buildStopIndex(stops: StopRef[]): StopIndex {
+  const byNormName = new Map<string, StopRef>();
+  const byId = new Map<number, StopRef>();
+  const prepared: StopIndex["prepared"] = [];
+
+  for (const stop of stops) {
+    const name = normalize(stop.name);
+    const sCore = placeCore(name);
+    if (!byNormName.has(name)) byNormName.set(name, stop);
+    if (!byId.has(stop.stopId)) byId.set(stop.stopId, stop);
+    prepared.push({
+      stop,
+      name,
+      sCore,
+      railBonus: looksLikeRailStation(stop.name) ? 150 : 0,
+    });
+  }
+
+  return { stops, byNormName, byId, prepared };
+}
+
+function rememberCatalog(stops: StopRef[], meta: StopsCatalogMeta): void {
+  memoryCatalog = stops;
+  memoryMeta = meta;
+  memoryIndex = buildStopIndex(stops);
+}
+
 export async function loadStopsCatalog(
   env: Env,
-): Promise<{ stops: StopRef[]; meta: StopsCatalogMeta }> {
-  if (memoryCatalog && memoryMeta) {
-    return { stops: memoryCatalog, meta: memoryMeta };
+): Promise<{ stops: StopRef[]; meta: StopsCatalogMeta; index: StopIndex }> {
+  if (memoryCatalog && memoryMeta && memoryIndex) {
+    return { stops: memoryCatalog, meta: memoryMeta, index: memoryIndex };
   }
 
   const stored = await createStorage(env).getStopsCatalog();
   if (stored) {
-    memoryCatalog = stored.stops;
-    memoryMeta = stored.meta;
-    return stored;
+    rememberCatalog(stored.stops, stored.meta);
+    return { stops: stored.stops, meta: stored.meta, index: memoryIndex! };
   }
 
   const stops = bundledStops as StopRef[];
@@ -42,12 +82,18 @@ export async function loadStopsCatalog(
     count: stops.length,
     source: "bundle",
   };
-  memoryCatalog = stops;
-  memoryMeta = meta;
-  return { stops, meta };
+  rememberCatalog(stops, meta);
+  return { stops, meta, index: memoryIndex! };
 }
 
-export function resolveStop(query: string, stops: StopRef[]): StopRef | null {
+export function resolveStop(
+  query: string,
+  stops: StopRef[],
+  index?: StopIndex,
+): StopRef | null {
+  const active = index ?? (memoryIndex?.stops === stops ? memoryIndex : null);
+  if (active) return resolveStopIndexed(query, active);
+
   const q = normalize(query);
   if (!q) return null;
 
@@ -93,6 +139,49 @@ export function resolveStop(query: string, stops: StopRef[]): StopRef | null {
   return best?.stop ?? null;
 }
 
+export function resolveStopIndexed(
+  query: string,
+  index: StopIndex,
+): StopRef | null {
+  const q = normalize(query);
+  if (!q) return null;
+
+  const exact = index.byNormName.get(q);
+  if (exact) return exact;
+
+  if (isBrnoMainStationName(query)) {
+    const hl = index.byNormName.get("hlavni nadrazi");
+    if (hl) return hl;
+  }
+
+  const qCore = placeCore(q);
+  let best: { stop: StopRef; score: number } | null = null;
+  for (const { stop, name, sCore, railBonus } of index.prepared) {
+    let score = 0;
+
+    if (qCore && sCore && qCore === sCore) score = 920;
+    else if (qCore && name.startsWith(qCore + " ")) score = 860;
+    else if (
+      qCore &&
+      sCore &&
+      (sCore.startsWith(qCore + " ") || qCore.startsWith(sCore + " "))
+    )
+      score = 820;
+    else if (name.startsWith(q + " ")) score = 800;
+    else if (name.startsWith(q)) score = 700;
+    else if (qCore && name.includes(qCore) && qCore.length >= 4) score = 560;
+    else if (name.includes(q)) score = 500;
+    else continue;
+
+    score += railBonus;
+    if (qCore && sCore && qCore === sCore) score -= Math.min(sCore.length, 20);
+    score -= Math.min(name.length, 60);
+
+    if (!best || score > best.score) best = { stop, score };
+  }
+  return best?.stop ?? null;
+}
+
 /** Fetch GTFS, parse stops + via index, persist via STORAGE_BACKEND. */
 export async function refreshStopsCatalog(env: Env): Promise<StopsCatalogMeta> {
   const { stops, viaBeyond } = await buildCatalogFromGtfs();
@@ -113,8 +202,7 @@ export async function refreshStopsCatalog(env: Env): Promise<StopsCatalogMeta> {
   const deployId = currentDeployId(env);
   await createStorage(env).putStopsCatalog(stops, meta, deployId);
 
-  memoryCatalog = stops;
-  memoryMeta = { ...meta, source: "kv" };
+  rememberCatalog(stops, { ...meta, source: "kv" });
   readyDeployId = deployId;
   return meta;
 }
@@ -166,6 +254,7 @@ function currentDeployId(env: Env): string {
 export function clearStopsMemoryCache(): void {
   memoryCatalog = null;
   memoryMeta = null;
+  memoryIndex = null;
   readyDeployId = null;
   clearViaMemoryCache();
 }

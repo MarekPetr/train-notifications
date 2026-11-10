@@ -1,5 +1,10 @@
 import { destinationsMatch, normalize } from "./names";
-import { resolveStop } from "./stops";
+import {
+  buildStopIndex,
+  resolveStop,
+  resolveStopIndexed,
+  type StopIndex,
+} from "./stops";
 import { isWithinWindow } from "./watch";
 import type {
   AlertEvent,
@@ -35,14 +40,22 @@ export interface EvalCache {
   boards: Map<string, ReturnType<typeof fetchBoard>>;
   alerts: Promise<AlertEvent[]> | null;
   stops?: StopRef[];
+  stopIndex?: StopIndex;
   viaBeyond?: ViaBeyondIndex;
 }
 
 export function createEvalCache(
   stops?: StopRef[],
   viaBeyond?: ViaBeyondIndex,
+  stopIndex?: StopIndex,
 ): EvalCache {
-  return { boards: new Map(), alerts: null, stops, viaBeyond };
+  return {
+    boards: new Map(),
+    alerts: null,
+    stops,
+    stopIndex: stopIndex ?? (stops ? buildStopIndex(stops) : undefined),
+    viaBeyond,
+  };
 }
 
 export async function evaluateWatch(
@@ -59,15 +72,26 @@ export async function evaluateWatch(
   observations: Record<string, TripObservation>;
 }> {
   const viaBeyond = cache?.viaBeyond ?? {};
+  const stopIndex =
+    cache?.stopIndex ?? (stops.length ? buildStopIndex(stops) : undefined);
+  if (cache && stopIndex && !cache.stopIndex) cache.stopIndex = stopIndex;
+
   const board = await getBoard(watch.from, stops, cache);
+  const fromStop = stopIndex
+    ? resolveStopIndexed(watch.from, stopIndex)
+    : resolveStop(watch.from, stops);
+  const toStop = stopIndex
+    ? resolveStopIndexed(watch.to, stopIndex)
+    : resolveStop(watch.to, stops);
   const nextObservations: Record<string, TripObservation> = {};
   const departures = board.departures
     .filter((dep) =>
       destinationServesWatch(
         dep.destination,
         watch.to,
-        watch.from,
-        stops,
+        fromStop,
+        toStop,
+        stopIndex,
         viaBeyond,
       ),
     )
@@ -122,11 +146,12 @@ async function getBoard(
   departures: BoardDeparture[];
   source: string;
 }> {
-  if (!cache) return fetchBoard(from, stops);
+  const stopIndex = cache?.stopIndex;
+  if (!cache) return fetchBoard(from, stops, stopIndex);
   const key = normalize(from);
   let pending = cache.boards.get(key);
   if (!pending) {
-    pending = fetchBoard(from, stops);
+    pending = fetchBoard(from, stops, stopIndex);
     cache.boards.set(key, pending);
   }
   return pending;
@@ -141,12 +166,15 @@ async function getAlerts(cache?: EvalCache): Promise<AlertEvent[]> {
 async function fetchBoard(
   from: string,
   stops: StopRef[],
+  stopIndex?: StopIndex,
 ): Promise<{
   stopName: string | null;
   departures: BoardDeparture[];
   source: string;
 }> {
-  const catalogStop = resolveStop(from, stops);
+  const catalogStop = stopIndex
+    ? resolveStopIndexed(from, stopIndex)
+    : resolveStop(from, stops);
   if (!catalogStop) {
     return { stopName: null, departures: [], source: "unresolved" };
   }
@@ -500,28 +528,24 @@ async function fetchAlerts(): Promise<AlertEvent[]> {
 function destinationServesWatch(
   boardDestination: string,
   wantedTo: string,
-  from: string,
-  stops: StopRef[],
+  fromStop: StopRef | null,
+  toStop: StopRef | null,
+  stopIndex: StopIndex | undefined,
   viaBeyond: ViaBeyondIndex,
 ): boolean {
   if (destinationsMatch(boardDestination, wantedTo)) return true;
-
-  const fromStop = resolveStop(from, stops);
-  const toStop = resolveStop(wantedTo, stops);
   if (!fromStop || !toStop) return false;
 
   const beyond = viaBeyond[`${fromStop.stopId}|${toStop.stopId}`];
   if (!beyond?.length) return false;
 
-  const boardStop = resolveStop(boardDestination, stops);
+  const boardStop = stopIndex
+    ? resolveStopIndexed(boardDestination, stopIndex)
+    : null;
   if (boardStop && beyond.includes(boardStop.stopId)) return true;
 
-  const stopsById = new Map<number, StopRef>();
-  for (const stop of stops) {
-    if (!stopsById.has(stop.stopId)) stopsById.set(stop.stopId, stop);
-  }
   for (const termId of beyond) {
-    const term = stopsById.get(termId);
+    const term = stopIndex?.byId.get(termId);
     if (term && destinationsMatch(boardDestination, term.name)) return true;
   }
   return false;
