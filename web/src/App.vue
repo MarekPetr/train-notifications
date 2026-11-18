@@ -18,6 +18,7 @@ const timeFrom = ref("");
 const timeTo = ref("");
 const webhook = ref("");
 const minDelay = ref("");
+const includeAlerts = ref(true);
 const editingId = ref("");
 
 const stopItems = ref<string[]>([]);
@@ -40,6 +41,7 @@ function fields() {
     timeTo: timeTo.value.trim(),
     webhook: webhook.value.trim(),
     minDelay: String(minDelay.value ?? "").trim(),
+    includeAlerts: includeAlerts.value,
   };
 }
 
@@ -161,6 +163,7 @@ function fillForm(watch: StoredWatch) {
   timeFrom.value = watch.timeFrom;
   timeTo.value = watch.timeTo;
   minDelay.value = watch.minDelay == null ? "" : String(watch.minDelay);
+  includeAlerts.value = watch.includeAlerts !== false;
   if (watch.webhook) webhook.value = watch.webhook;
   editingId.value = watch.id || "";
   persistForm();
@@ -172,6 +175,7 @@ function resetFormFields() {
   timeFrom.value = "";
   timeTo.value = "";
   minDelay.value = "";
+  includeAlerts.value = true;
 }
 
 function clearEditing() {
@@ -269,6 +273,7 @@ async function onDelete() {
         timeFrom: timeFrom.value,
         timeTo: timeTo.value,
         minDelay: null,
+        includeAlerts: includeAlerts.value,
       } satisfies StoredWatch);
     await deleteWatch(watch);
     return;
@@ -301,9 +306,12 @@ function onWatchTest(watch: StoredWatch) {
 }
 
 function watchMeta(watch: StoredWatch): string {
-  return watch.minDelay == null
-    ? `${watch.timeFrom}–${watch.timeTo} · jen zrušení`
-    : `${watch.timeFrom}–${watch.timeTo} · min. zpoždění ${watch.minDelay} min`;
+  const delay =
+    watch.minDelay == null
+      ? "jen zrušení"
+      : `min. zpoždění ${watch.minDelay} min`;
+  const alerts = watch.includeAlerts === false ? "bez výluk" : "vč. výluk";
+  return `${watch.timeFrom}–${watch.timeTo} · ${delay} · ${alerts}`;
 }
 
 watch(webhook, () => {
@@ -393,6 +401,17 @@ onMounted(() => {
           inputmode="numeric"
           placeholder="prázdné = jen zrušení"
         />
+      </label>
+
+      <label
+        class="flex cursor-pointer items-center gap-[0.65rem] text-[0.92rem] font-semibold"
+      >
+        <input
+          v-model="includeAlerts"
+          class="checkbox"
+          type="checkbox"
+        />
+        Sledovat i výluky
       </label>
 
       <div class="mt-1 flex flex-wrap gap-[0.55rem]">

@@ -104,7 +104,7 @@ export async function evaluateWatch(
     });
 
   const lines = [...new Set(departures.map((d) => d.line))];
-  const alerts = (await getAlerts(cache)).filter((alert) => {
+  const matchedAlerts = (await getAlerts(cache)).filter((alert) => {
     if (lines.length === 0) return false;
     return alert.routes.some((route) =>
       lines.some((line) => normalize(line) === normalize(route)),
@@ -112,7 +112,7 @@ export async function evaluateWatch(
   });
 
   const cancelledRoutes = new Set(
-    alerts
+    matchedAlerts
       .filter((a) =>
         /zruš|cancel|nejede|odřaz|odřáz|nepojede/i.test(
           `${a.header} ${a.description}`,
@@ -127,6 +127,9 @@ export async function evaluateWatch(
       dep.status = "cancelled";
     }
   }
+
+  // Výluky pořád bereme pro značení zrušení; do snapshotu/notifikací jen když chce uživatel.
+  const alerts = watch.includeAlerts === false ? [] : matchedAlerts;
 
   return {
     departures,

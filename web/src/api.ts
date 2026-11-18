@@ -8,6 +8,8 @@ export type StoredWatch = {
   timeTo: string;
   webhook?: string;
   minDelay: number | null;
+  /** Missing on older records = treat as true. */
+  includeAlerts?: boolean;
   createdAt?: string;
 };
 
@@ -56,6 +58,7 @@ export function watchQuery(
     timeTo: string;
     webhook: string;
     minDelay: string;
+    includeAlerts: boolean;
   },
   extra: Record<string, string> = {},
   watch?: Partial<StoredWatch> | null,
@@ -71,5 +74,10 @@ export function watchQuery(
   if (rawMin != null && String(rawMin).trim() !== "") {
     params.set("minDelay", String(rawMin));
   }
+  const includeAlerts =
+    watch && "includeAlerts" in watch
+      ? watch.includeAlerts !== false
+      : fields.includeAlerts;
+  params.set("vyluky", includeAlerts ? "1" : "0");
   return params.toString();
 }

@@ -58,7 +58,22 @@ export function parseWatchFromRequest(
     }
   }
 
-  return { from, to, timeFrom, timeTo, webhook, minDelay };
+  const includeAlerts = parseBoolParam(
+    url.searchParams.get("includeAlerts") ??
+      url.searchParams.get("vyluky") ??
+      url.searchParams.get("alerts"),
+    true,
+  );
+
+  return { from, to, timeFrom, timeTo, webhook, minDelay, includeAlerts };
+}
+
+function parseBoolParam(raw: string | null, fallback: boolean): boolean {
+  if (raw == null || raw.trim() === "") return fallback;
+  const value = raw.trim().toLowerCase();
+  if (["1", "true", "yes", "ano", "on"].includes(value)) return true;
+  if (["0", "false", "no", "ne", "off"].includes(value)) return false;
+  throw new Error(`Neplatná boolean hodnota '${raw}'`);
 }
 
 export function watchId(watch: WatchConfig): string {

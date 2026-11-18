@@ -38,6 +38,10 @@
     @apply outline-2 outline-offset-1 outline-focus;
   }
 
+  .checkbox {
+    @apply size-[1.1rem] shrink-0 accent-accent;
+  }
+
   .btn {
     @apply cursor-pointer rounded-full border border-line bg-white px-[0.95rem] py-[0.55rem] font-semibold text-ink;
     font: inherit;

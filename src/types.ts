@@ -43,6 +43,11 @@ export interface WatchConfig {
   webhook?: string;
   /** Práh zpoždění v minutách; `null` = sledovat jen zrušení (ne zpoždění). */
   minDelay: number | null;
+  /**
+   * Sledovat a notifikovat výluky/odklony.
+   * `undefined` / chybějící u starších záznamů = true.
+   */
+  includeAlerts?: boolean;
 }
 
 export interface DepartureEvent {
